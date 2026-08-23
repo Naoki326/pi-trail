@@ -457,7 +457,7 @@ function renderFish(list) {
     projs.get(e.cwd).push(e);
   }
   const arr = [...projs.entries()].sort((a, b) => b[1][0].ts - a[1][0].ts); // 最近活跃在前
-  let html = "";
+  let html = `<div class="introBar">🐟 每根鱼刺＝<b>一场对话</b>（鱼骨＝该项目的时间轴，不同对话各占一根刺）· 刺越粗 / 标签尾数字越大＝该对话输入越多 · 悬停看完整信息，点击展开</div>`;
   for (const [cwd, items] of arr) {
     const col = projectColor(cwd);
     const convs = new Map();
@@ -479,7 +479,7 @@ function renderFish(list) {
     const titleLen = n > 18 ? 8 : 12;
     const labelOf = (c) => {
       const t = convTitle(c.es);
-      return { full: t.text, s: `${fmtTime(c.start)} ${t.text}`.slice(0, 7 + titleLen) };
+      return { full: t.text, s: `${fmtTime(c.start)} ${t.text}`.slice(0, 7 + titleLen) + ` ·${c.es.length}` };
     };
     const maxLabelW = Math.max(60, ...cs.map((c) => estW(labelOf(c).s)));
     const cos35 = 0.819, sin35 = 0.574;

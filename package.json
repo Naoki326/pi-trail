@@ -1,6 +1,6 @@
 {
   "name": "pi-trail",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Automatically record every input you type into pi, review it as a self-writing work journal — conversations, projects, memos, reminders, and AI-powered project progress analysis. Multi-machine sync via git.",
   "keywords": [
     "pi-package",
