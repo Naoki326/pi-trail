@@ -94,10 +94,6 @@ pi remove npm:pi-trail
 
 Your data stays in `~/.pi/trail` (a normal git repo) — it's yours.
 
-## 中文简介
-
-**pi trail** 自动记录你在 pi 里亲手输入的每一条指令（TUI / pi-web 均可，子代理与注入消息自动排除），存为本地 git 仓库，并在网页里按 **对话 / 按天 / 树形（电脑→项目→对话）/ 鱼骨图 / AI 项目分析** 五种视图呈现；鱼骨图每项目一根主骨、每场对话一根稳定颜色的鱼刺（位置＝结束时刻，展开后主骨小刺标记每次输入时间）。支持备忘录、到期提醒、多主机 git 同步（互相变基、并集合并）。AI 分析纯手动触发，使用你已有的 OpenRouter key。数据 100% 本地，卸载后数据仍是你的 git 仓库。
-
 *(中文版见 [README.md](README.md)。)*
 
 ## License
