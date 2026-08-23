@@ -234,6 +234,7 @@ async function api(path, body) {
 }
 
 let analysisRendered = false; // 分析视图首次渲染后不随轮询重建（避免阅读中折叠/跳动）
+let fishRendered = false; // 鱼骨视图同样不随轮询重建（保留滚动/悬停状态）
 
 async function refresh() {
   try {
@@ -241,8 +242,12 @@ async function refresh() {
     state.entries = e.items;
     state.meta = m;
     $("#status").textContent = `共 ${e.items.length} 条 · 更新于 ${fmtTime(Date.now())}`;
-    if (state.tab === "timeline" && state.view === "analysis") {
-      if (!analysisRendered) { await ensureAnalysisData(); render(); }
+    if (state.tab === "timeline" && (state.view === "analysis" || state.view === "fish")) {
+      const rendered = state.view === "analysis" ? analysisRendered : fishRendered;
+      if (!rendered) {
+        if (state.view === "analysis") await ensureAnalysisData();
+        render();
+      }
     } else {
       render();
     }
@@ -437,6 +442,7 @@ function projectColor(cwd) {
 
 // 鱼骨图视图：中轴=当日时间线，鱼刺=对话（项目着色、粗细=条数、分层长度防叠字）
 function renderFish(list) {
+  fishRendered = true;
   const byDay = new Map();
   for (const e of list) {
     const d = fmtDate(e.ts);
@@ -661,7 +667,9 @@ $("#main").addEventListener("click", async (ev) => {
     const k = bone.dataset.key;
     if (state.expanded.has(k)) state.expanded.delete(k); else state.expanded.add(k);
     localStorage.setItem("pil-expanded", JSON.stringify([...state.expanded]));
+    const savedScroll = [...document.querySelectorAll(".fishWrap")].map((el) => el.scrollLeft);
     render();
+    document.querySelectorAll(".fishWrap").forEach((el, i) => { if (savedScroll[i] != null) el.scrollLeft = savedScroll[i]; });
     return;
   }
   const head = ev.target.closest(".treeHead");
