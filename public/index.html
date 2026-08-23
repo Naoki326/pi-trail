@@ -58,7 +58,9 @@
   .fishWrap .spine { stroke: var(--dim); stroke-width: 2; }
   .fishWrap .tick { stroke: var(--border); stroke-width: 1; }
   .fishWrap .tickLabel { fill: var(--dim); font-size: 9px; }
-  g.bone { cursor: pointer; outline: none; }
+  g.bone { cursor: pointer; outline: none; pointer-events: none; }
+  g.bone .hit { pointer-events: stroke; cursor: pointer; }
+  g.bone text { pointer-events: none; }
   g.bone line { transition: stroke-width .1s; }
   g.bone:hover line { stroke-width: 4; }
   g.bone text { opacity: .8; }
@@ -440,76 +442,98 @@ function projectColor(cwd) {
   return `hsl(${h}, 65%, 58%)`;
 }
 
-// 鱼骨图视图：中轴=当日时间线，鱼刺=对话（项目着色、粗细=条数、分层长度防叠字）
+// 鱼骨图视图：每个项目（文件夹）一根鱼骨——中轴=项目活跃时间跨度，鱼刺=对话
+// 文本宽度按全角/半角精确估算，画布边界随之扩展，标签不再溢出
+function estW(s) {
+  return [...String(s)].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 10 : 5.5), 0);
+}
+
 function renderFish(list) {
   fishRendered = true;
-  const byDay = new Map();
+  const projs = new Map(); // cwd -> entries[]
   for (const e of list) {
-    const d = fmtDate(e.ts);
-    if (!byDay.has(d)) byDay.set(d, []);
-    byDay.get(d).push(e);
+    if (!projs.has(e.cwd)) projs.set(e.cwd, []);
+    projs.get(e.cwd).push(e);
   }
+  const arr = [...projs.entries()].sort((a, b) => b[1][0].ts - a[1][0].ts); // 最近活跃在前
   let html = "";
-  for (const [d, items] of [...byDay.entries()].sort((a, b) => (b[0] < a[0] ? 1 : -1))) {
+  for (const [cwd, items] of arr) {
+    const col = projectColor(cwd);
     const convs = new Map();
     for (const e of items) {
       const sid = e.sessionId || "";
       if (!convs.has(sid)) convs.set(sid, []);
       convs.get(sid).push(e);
     }
-    const arr = [...convs.entries()]
+    const cs = [...convs.entries()]
       .map(([sid, es]) => ({ sid, es, start: es.reduce((m, e) => Math.min(m, e.ts), Infinity) }))
       .sort((a, b) => a.start - b.start);
-    const W = 900, pad = 30;
-    // 密集自适应：对话越多 → 层数越多、标签越短（悬停可看全文）
-    const n = arr.length;
+    const W = 900, PAD = 30;
+    const n = cs.length;
     const nTiers = n > 18 ? 5 : n > 10 ? 4 : 3;
     const tiers = Array.from({ length: nTiers }, (_, i) => 26 + i * 24);
-    const labLen = n > 18 ? 12 : n > 10 ? 18 : 26;
     const maxTier = tiers[tiers.length - 1];
-    const spineY = maxTier + 34;
-    const t0 = arr[0].start, t1 = Math.max(arr[arr.length - 1].start, t0 + 1);
-    const X = (ts) => pad + ((W - 2 * pad) * (ts - t0)) / (t1 - t0);
-    // 防重叠：同侧鱼刺标签锚点强制最小间距（时间顺序保持单调，必要时加宽画布）
+    const t0 = cs[0].start, t1 = Math.max(cs[cs.length - 1].start, t0 + 1);
+    const X = (ts) => PAD + ((W - 2 * PAD) * (ts - t0)) / (t1 - t0);
+    const titleLen = n > 18 ? 8 : 12;
+    const labelOf = (c) => {
+      const t = convTitle(c.es);
+      return { full: t.text, s: `${fmtTime(c.start)} ${t.text}`.slice(0, 7 + titleLen) };
+    };
+    const maxLabelW = Math.max(60, ...cs.map((c) => estW(labelOf(c).s)));
+    const cos35 = 0.819, sin35 = 0.574;
+    const dy = Math.round(maxLabelW * sin35) + 14;
+    const spineY = maxTier + dy + 6;
+    const H = spineY + maxTier + dy + 8;
+    // 同侧最小间距防重叠（时间序单调，必要时加宽画布）
     const minGap = 44;
     const lastX = { u: -Infinity, d: -Infinity };
-    let nUp = 0, nDown = 0;
-    for (const c of arr) {
+    let nUp = 0, nDown = 0, maxTipX = 0;
+    for (const c of cs) {
       const side = nUp <= nDown ? -1 : 1;
-      if (side < 0) nUp++; else nDown++;
+      c.tier = tiers[(side < 0 ? nUp++ : nDown++) % tiers.length];
       c.side = side;
-      c.tier = tiers[(side < 0 ? c.upI = nUp - 1 : nDown - 1) % tiers.length];
       const k = side < 0 ? "u" : "d";
       let x = X(c.start);
       if (x - lastX[k] < minGap) x = lastX[k] + minGap;
       lastX[k] = x;
       c.x = x;
+      maxTipX = Math.max(maxTipX, x + c.tier * 0.6);
     }
-    const W2 = Math.max(W, ...arr.map((c) => c.x + c.tier * 0.6 + labLen * 5 + pad));
+    const W2 = Math.max(W, Math.round(maxTipX + maxLabelW * 0.86 + 42));
+    // 每项目手风琴：同时只展开一场对话（对应关系一目了然）
+    const pfx = `fp:${cwd}`;
+    const openKey = [...state.expanded].find((k) => k.startsWith(pfx + ":"));
+    const openSid = openKey ? openKey.slice(pfx.length + 1) : null;
     let bones = "";
-    for (const c of arr) {
+    for (const c of cs) {
       const { side, tier, x: bx } = c;
       const tipX = bx + tier * 0.6, tipY = spineY + side * tier;
-      const col = projectColor(c.es[0].cwd);
-      const t = convTitle(c.es);
-      const label = `${fmtTime(c.start)} ${t.text}`.slice(0, labLen);
-      const key = `f:${c.sid}:${d}`;
-      const open = state.expanded.has(key);
+      const lb = labelOf(c);
+      const open = openSid === c.sid;
       const rot = side < 0 ? -35 : 35;
       const ly = side < 0 ? tipY - 4 : tipY + 11;
-      bones += `<g pointer-events="bounding-box" class="bone ${open ? "on" : ""}" data-key="${esc(key)}" tabindex="0" role="button" aria-expanded="${open}" title="${esc(`${t.text}\n${projName(c.es[0].cwd)} · ${c.es.length} 条 · ${fmtTime(c.start)} 开始`)}"><line x1="${bx}" y1="${spineY}" x2="${tipX}" y2="${tipY}" stroke="${col}" stroke-width="${Math.min(2 + c.es.length * 0.35, 5)}"/><circle cx="${tipX}" cy="${tipY}" r="2.6" fill="${col}"/><text x="${tipX + 3}" y="${ly}" transform="rotate(${rot} ${tipX} ${tipY})" fill="${col}" font-size="10">${esc(label)}</text></g>`;
+      bones += `<g class="bone ${open ? "on" : ""}" data-key="${esc(pfx + ":" + c.sid)}" tabindex="0" role="button" aria-expanded="${open}" title="${esc(`${lb.full}\n${projName(cwd)} · ${c.es.length} 条 · ${fmtDate(c.start)} ${fmtTime(c.start)} 开始`)}"><line class="hit" x1="${bx}" y1="${spineY}" x2="${tipX}" y2="${tipY}" stroke="transparent" stroke-width="16"/><line x1="${bx}" y1="${spineY}" x2="${tipX}" y2="${tipY}" stroke="${col}" stroke-width="${Math.min(2 + c.es.length * 0.35, 5)}"/><circle cx="${tipX}" cy="${tipY}" r="2.6" fill="${col}"/><text x="${tipX + 3}" y="${ly}" transform="rotate(${rot} ${tipX} ${tipY})" fill="${col}" font-size="10">${esc(lb.s)}</text></g>`;
     }
+    // 时间刻度：跨度 > 1.5 天显示日期，否则显示时刻
+    const spanDays = (t1 - t0) / 86400000;
     let ticks = "";
     for (let i = 0; i <= 6; i++) {
-      const tx = pad + ((W2 - 2 * pad) * i) / 6;
+      const tx = PAD + ((W2 - 2 * PAD) * i) / 6;
       const dd = new Date(t0 + ((t1 - t0) * i) / 6);
-      ticks += `<line class="tick" x1="${tx}" y1="${spineY - 4}" x2="${tx}" y2="${spineY + 4}"/><text class="tickLabel" x="${tx}" y="${spineY + 16}" text-anchor="middle">${String(dd.getHours()).padStart(2, "0")}:${String(dd.getMinutes()).padStart(2, "0")}</text>`;
+      const lb = spanDays > 1.5 ? `${pad(dd.getMonth() + 1)}-${pad(dd.getDate())}` : `${pad(dd.getHours())}:${pad(dd.getMinutes())}`;
+      ticks += `<line class="tick" x1="${tx}" y1="${spineY - 4}" x2="${tx}" y2="${spineY + 4}"/><text class="tickLabel" x="${tx}" y="${spineY + 16}" text-anchor="middle">${lb}</text>`;
     }
-    const expandedHtml = arr
-      .filter((c) => state.expanded.has(`f:${c.sid}:${d}`))
-      .map((c) => `<div style="margin-bottom:10px"><div style="font-size:12px;color:var(--dim);margin:4px 0">💬 ${esc(convTitle(c.es).text)} · ${esc(projName(c.es[0].cwd))}</div>${c.es.slice().sort((a, b) => b.ts - a.ts).map((e) => entryHtml(e, false, true)).join("")}</div>`)
-      .join("");
-    html += `<section class="day"><h2>${d} · ${items.length} 条 · ${arr.length} 场对话</h2><div class="fishWrap"><svg width="${W2}" height="${spineY + maxTier + 36}" viewBox="0 0 ${W2} ${spineY + maxTier + 36}" xmlns="http://www.w3.org/2000/svg"><line class="spine" x1="8" y1="${spineY}" x2="${W2 - 8}" y2="${spineY}"/>${ticks}${bones}</svg></div>${expandedHtml}</section>`;
+    // 展开的对话：左侧项目色条 + 头部镜像鱼刺标签（时间+标题），与点中的鱼刺一一对应
+    let expandedHtml = "";
+    if (openSid) {
+      const c = cs.find((x) => x.sid === openSid);
+      if (c) {
+        const lb = labelOf(c);
+        expandedHtml = `<div style="border-left:3px solid ${col};padding-left:12px;margin:6px 0 10px"><div style="font-size:12px;color:var(--dim);margin:4px 0">💬 <span style="color:${col}">●</span> ${esc(lb.full)} · ${fmtDate(c.start)} ${fmtTime(c.start)} 开始 · ${c.es.length} 条</div>${c.es.slice().sort((a, b) => b.ts - a.ts).map((e) => entryHtml(e, false, true)).join("")}</div>`;
+      }
+    }
+    html += `<section class="day"><h2 style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="width:10px;height:10px;border-radius:3px;background:${col};display:inline-block;flex:none"></span>${esc(projName(cwd))} <span style="font-weight:400;font-size:12px">· ${items.length} 条 · ${cs.length} 场对话 · ${fmtDate(items[items.length - 1].ts)} ~ ${fmtDate(items[0].ts)} · <span title="${esc(cwd)}">${esc(cwd.length > 46 ? cwd.slice(0, 46) + "…" : cwd)}</span></span></h2><div class="fishWrap"><svg width="${W2}" height="${H}" viewBox="0 0 ${W2} ${H}" xmlns="http://www.w3.org/2000/svg"><line class="spine" x1="8" y1="${spineY}" x2="${W2 - 8}" y2="${spineY}"/>${ticks}${bones}</svg></div>${expandedHtml}</section>`;
   }
   return html;
 }
@@ -665,7 +689,14 @@ $("#main").addEventListener("click", async (ev) => {
   const bone = ev.target.closest && ev.target.closest("g.bone");
   if (bone) {
     const k = bone.dataset.key;
-    if (state.expanded.has(k)) state.expanded.delete(k); else state.expanded.add(k);
+    if (state.expanded.has(k)) state.expanded.delete(k);
+    else {
+      if (k.startsWith("fp:")) { // 手风琴：同项目只保留一场
+        const pfx = k.slice(0, k.lastIndexOf(":"));
+        [...state.expanded].filter((x) => x.startsWith(pfx + ":")).forEach((x) => state.expanded.delete(x));
+      }
+      state.expanded.add(k);
+    }
     localStorage.setItem("pil-expanded", JSON.stringify([...state.expanded]));
     const savedScroll = [...document.querySelectorAll(".fishWrap")].map((el) => el.scrollLeft);
     render();
