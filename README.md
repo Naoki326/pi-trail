@@ -18,7 +18,8 @@ You talk to your coding agent dozens of times a day across many projects — the
 ## Features
 
 - 📝 **Captures your inputs only** — typed in TUI or pi-web. Skill invocations (`/skill:name`) are recorded as one line, never the expanded prompt body. Subagent sessions (in-memory or persisted with `type#hash` names) and extension-injected messages are excluded on both write and read paths.
-- 🧭 **Five timeline views** — 💬 *Conversations* (flat, titled by session name or first input), 📅 *By day*, 🌲 *Tree* (machine → project → conversation), 🐟 *Fishbone* (spine = project timeline, bones = conversations anchored at their end time, colored by project; expanding draws a small spur per input), 📊 *Analysis*.
+- 🧭 **Five timeline views** — 💬 *Conversations* (flat, titled by session name or first input), 📅 *By day*, 🌲 *Tree* (machine → project → conversation), 🐟 *Fishbone*, 📊 *Analysis*.
+- 🐟 **Fishbone timeline** — one spine per project folder, one bone per conversation anchored at its **end time**; every conversation gets a stable color shared by its bone, label, and expanded panel. Bone thickness and the label suffix encode input count. Click a bone to expand it: small spurs appear on the spine marking **each input's timestamp** (hover for content), with a span line back to the bone. Collapsible, keyboard-accessible, and dense days auto-declutter via tiered lengths and minimum gaps.
 - 🖥 **Multi-machine aware** — every entry carries a machine GUID + hostname; machines with duplicate hostnames never collide.
 - 🔁 **Git-backed, multi-host sync** — data lives in its own git repo (`~/.pi/trail`). Point it at any remote and multiple machines append, rebase onto each other and push automatically. Append-only JSONL + `merge=union` means concurrent appends never conflict.
 - 📌 **Memos & reminders** — pin any input as a memo, set due-date reminders; annotations are append-only events, so they sync safely too.
@@ -28,6 +29,8 @@ You talk to your coding agent dozens of times a day across many projects — the
 
 ![tree view](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-tree.png)
 
+![fishbone view](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-fishbone.png)
+
 ## Install
 
 ```bash
@@ -36,11 +39,7 @@ pi install npm:pi-trail
 pi install git:github.com/Naoki326/pi-trail
 ```
 
-Then restart pi (or `/reload`) and open **http://localhost:7799** — your first inputs appear within seconds.
-
-To record history into an existing log (one-time, optional):
-
-> Tip: entries are recorded from install-time forward. A backfill script example lives in the repo wiki/discussions if you want to import past session files.
+Then restart pi (or `/reload`) and open **http://localhost:7799** — your first inputs appear within seconds. Recording starts at install time; entries are never back-dated.
 
 ## The data
 
@@ -82,6 +81,8 @@ The 📊 view lists every project with its input volume and time range. Press **
 | `PI_TRAIL_STORE` | `~/.pi/trail` | Data directory (also used for demo/testing) |
 | `~/.pi/trail/config.json` | — | remote / branch / syncIntervalSec / autoSync / analysisModel |
 
+Upgrading from the pre-release `~/.pi/input-log`? The data directory is migrated automatically on first start.
+
 The UI listens on `0.0.0.0` so phones on your LAN can open it; allow Node through the firewall on first run. There is **no authentication** — treat it as trusted-LAN only.
 
 ## Uninstall
@@ -94,7 +95,7 @@ Your data stays in `~/.pi/trail` (a normal git repo) — it's yours.
 
 ## 中文简介
 
-**pi trail** 自动记录你在 pi 里亲手输入的每一条指令（TUI / pi-web 均可，子代理与注入消息自动排除），存为本地 git 仓库，并在网页里按 **对话 / 按天 / 树形（电脑→项目→对话）/ 鱼骨图 / AI 项目分析** 五种视图呈现。支持备忘录、到期提醒、多主机 git 同步（互相变基、并集合并）。AI 分析纯手动触发，使用你已有的 OpenRouter key。数据 100% 本地，卸载后数据仍是你的 git 仓库。
+**pi trail** 自动记录你在 pi 里亲手输入的每一条指令（TUI / pi-web 均可，子代理与注入消息自动排除），存为本地 git 仓库，并在网页里按 **对话 / 按天 / 树形（电脑→项目→对话）/ 鱼骨图 / AI 项目分析** 五种视图呈现；鱼骨图每项目一根主骨、每场对话一根稳定颜色的鱼刺（位置＝结束时刻，展开后主骨小刺标记每次输入时间）。支持备忘录、到期提醒、多主机 git 同步（互相变基、并集合并）。AI 分析纯手动触发，使用你已有的 OpenRouter key。数据 100% 本地，卸载后数据仍是你的 git 仓库。
 
 ## License
 
