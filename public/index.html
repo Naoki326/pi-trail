@@ -53,6 +53,17 @@
   .analysisMd ul { margin: 4px 0 4px 20px; }
   .analysisMd p { margin: 4px 0; }
   .introBar { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: var(--dim); }
+  .fishWrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 4px 6px; margin-bottom: 8px; }
+  .fishWrap svg { display: block; }
+  .fishWrap .spine { stroke: var(--dim); stroke-width: 2; }
+  .fishWrap .tick { stroke: var(--border); stroke-width: 1; }
+  .fishWrap .tickLabel { fill: var(--dim); font-size: 9px; }
+  g.bone { cursor: pointer; outline: none; }
+  g.bone line { transition: stroke-width .1s; }
+  g.bone:hover line { stroke-width: 4; }
+  g.bone text { opacity: .8; }
+  g.bone:hover text, g.bone.on text { opacity: 1; }
+  g.bone.on line { filter: drop-shadow(0 0 3px var(--accent)); }
   #search {
     flex: 1; min-width: 180px; max-width: 420px; background: var(--panel2);
     border: 1px solid var(--border); color: var(--text); border-radius: 6px;
@@ -143,6 +154,7 @@
         <button data-view="conv">💬 对话</button>
         <button data-view="day">📅 按天</button>
         <button data-view="tree">🌲 树形</button>
+        <button data-view="fish">🐟 鱼骨</button>
         <button data-view="analysis">📊 分析</button>
       </div>
       <input id="search" type="search" placeholder="搜索输入内容…">
@@ -416,6 +428,86 @@ async function ensureAnalysisData() {
   }
 }
 
+// 项目稳定取色（路径哈希 → HSL）
+function projectColor(cwd) {
+  let h = 0;
+  for (const c of String(cwd || "")) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return `hsl(${h}, 65%, 58%)`;
+}
+
+// 鱼骨图视图：中轴=当日时间线，鱼刺=对话（项目着色、粗细=条数、分层长度防叠字）
+function renderFish(list) {
+  const byDay = new Map();
+  for (const e of list) {
+    const d = fmtDate(e.ts);
+    if (!byDay.has(d)) byDay.set(d, []);
+    byDay.get(d).push(e);
+  }
+  let html = "";
+  for (const [d, items] of [...byDay.entries()].sort((a, b) => (b[0] < a[0] ? 1 : -1))) {
+    const convs = new Map();
+    for (const e of items) {
+      const sid = e.sessionId || "";
+      if (!convs.has(sid)) convs.set(sid, []);
+      convs.get(sid).push(e);
+    }
+    const arr = [...convs.entries()]
+      .map(([sid, es]) => ({ sid, es, start: es.reduce((m, e) => Math.min(m, e.ts), Infinity) }))
+      .sort((a, b) => a.start - b.start);
+    const W = 900, pad = 30;
+    // 密集自适应：对话越多 → 层数越多、标签越短（悬停可看全文）
+    const n = arr.length;
+    const nTiers = n > 18 ? 5 : n > 10 ? 4 : 3;
+    const tiers = Array.from({ length: nTiers }, (_, i) => 26 + i * 24);
+    const labLen = n > 18 ? 12 : n > 10 ? 18 : 26;
+    const maxTier = tiers[tiers.length - 1];
+    const spineY = maxTier + 34;
+    const t0 = arr[0].start, t1 = Math.max(arr[arr.length - 1].start, t0 + 1);
+    const X = (ts) => pad + ((W - 2 * pad) * (ts - t0)) / (t1 - t0);
+    // 防重叠：同侧鱼刺标签锚点强制最小间距（时间顺序保持单调，必要时加宽画布）
+    const minGap = 44;
+    const lastX = { u: -Infinity, d: -Infinity };
+    let nUp = 0, nDown = 0;
+    for (const c of arr) {
+      const side = nUp <= nDown ? -1 : 1;
+      if (side < 0) nUp++; else nDown++;
+      c.side = side;
+      c.tier = tiers[(side < 0 ? c.upI = nUp - 1 : nDown - 1) % tiers.length];
+      const k = side < 0 ? "u" : "d";
+      let x = X(c.start);
+      if (x - lastX[k] < minGap) x = lastX[k] + minGap;
+      lastX[k] = x;
+      c.x = x;
+    }
+    const W2 = Math.max(W, ...arr.map((c) => c.x + c.tier * 0.6 + labLen * 5 + pad));
+    let bones = "";
+    for (const c of arr) {
+      const { side, tier, x: bx } = c;
+      const tipX = bx + tier * 0.6, tipY = spineY + side * tier;
+      const col = projectColor(c.es[0].cwd);
+      const t = convTitle(c.es);
+      const label = `${fmtTime(c.start)} ${t.text}`.slice(0, labLen);
+      const key = `f:${c.sid}:${d}`;
+      const open = state.expanded.has(key);
+      const rot = side < 0 ? -35 : 35;
+      const ly = side < 0 ? tipY - 4 : tipY + 11;
+      bones += `<g pointer-events="bounding-box" class="bone ${open ? "on" : ""}" data-key="${esc(key)}" tabindex="0" role="button" aria-expanded="${open}" title="${esc(`${t.text}\n${projName(c.es[0].cwd)} · ${c.es.length} 条 · ${fmtTime(c.start)} 开始`)}"><line x1="${bx}" y1="${spineY}" x2="${tipX}" y2="${tipY}" stroke="${col}" stroke-width="${Math.min(2 + c.es.length * 0.35, 5)}"/><circle cx="${tipX}" cy="${tipY}" r="2.6" fill="${col}"/><text x="${tipX + 3}" y="${ly}" transform="rotate(${rot} ${tipX} ${tipY})" fill="${col}" font-size="10">${esc(label)}</text></g>`;
+    }
+    let ticks = "";
+    for (let i = 0; i <= 6; i++) {
+      const tx = pad + ((W2 - 2 * pad) * i) / 6;
+      const dd = new Date(t0 + ((t1 - t0) * i) / 6);
+      ticks += `<line class="tick" x1="${tx}" y1="${spineY - 4}" x2="${tx}" y2="${spineY + 4}"/><text class="tickLabel" x="${tx}" y="${spineY + 16}" text-anchor="middle">${String(dd.getHours()).padStart(2, "0")}:${String(dd.getMinutes()).padStart(2, "0")}</text>`;
+    }
+    const expandedHtml = arr
+      .filter((c) => state.expanded.has(`f:${c.sid}:${d}`))
+      .map((c) => `<div style="margin-bottom:10px"><div style="font-size:12px;color:var(--dim);margin:4px 0">💬 ${esc(convTitle(c.es).text)} · ${esc(projName(c.es[0].cwd))}</div>${c.es.slice().sort((a, b) => b.ts - a.ts).map((e) => entryHtml(e, false, true)).join("")}</div>`)
+      .join("");
+    html += `<section class="day"><h2>${d} · ${items.length} 条 · ${arr.length} 场对话</h2><div class="fishWrap"><svg width="${W2}" height="${spineY + maxTier + 36}" viewBox="0 0 ${W2} ${spineY + maxTier + 36}" xmlns="http://www.w3.org/2000/svg"><line class="spine" x1="8" y1="${spineY}" x2="${W2 - 8}" y2="${spineY}"/>${ticks}${bones}</svg></div>${expandedHtml}</section>`;
+  }
+  return html;
+}
+
 function renderAnalysis() {
   analysisRendered = true;
   const main = $("#main");
@@ -463,6 +555,10 @@ function render() {
   const main = $("#main");
   const list = visible();
 
+  if (state.tab === "timeline" && state.view === "fish") {
+    main.innerHTML = renderFish(list);
+    return;
+  }
   if (state.tab === "timeline" && state.view === "analysis") {
     renderAnalysis();
     return;
@@ -560,11 +656,19 @@ $("#main").addEventListener("toggle", (ev) => {
 }, true);
 
 $("#main").addEventListener("click", async (ev) => {
+  const bone = ev.target.closest && ev.target.closest("g.bone");
+  if (bone) {
+    const k = bone.dataset.key;
+    if (state.expanded.has(k)) state.expanded.delete(k); else state.expanded.add(k);
+    localStorage.setItem("pil-expanded", JSON.stringify([...state.expanded]));
+    render();
+    return;
+  }
   const head = ev.target.closest(".treeHead");
   if (head) {
     const k = head.dataset.key;
-    // 对话（c:）与树形对话层（s:）默认折叠 → 用「已展开」集合；机器/项目层（m:/p:）默认展开 → 用「已折叠」集合
-    const defaultCollapsed = k.startsWith("c:") || k.startsWith("s:");
+    // 对话（c:）/树形对话层（s:）/鱼骨（f:）默认折叠 → 「已展开」集合
+    const defaultCollapsed = k.startsWith("c:") || k.startsWith("s:") || k.startsWith("f:");
     const set = defaultCollapsed ? state.expanded : state.collapsed;
     if (set.has(k)) set.delete(k); else set.add(k);
     localStorage.setItem(defaultCollapsed ? "pil-expanded" : "pil-collapsed", JSON.stringify([...set]));
@@ -620,6 +724,13 @@ $("#main").addEventListener("click", async (ev) => {
     dlg.showModal();
     $("#confirmOk").onclick = async () => { await api("/api/delete", { id }); dlg.close(); refresh(); };
     $("#confirmCancel").onclick = () => dlg.close();
+  }
+});
+
+$("#main").addEventListener("keydown", (ev) => {
+  if ((ev.key === "Enter" || ev.key === " ") && ev.target.closest && ev.target.closest("g.bone")) {
+    ev.preventDefault();
+    ev.target.closest("g.bone").dispatchEvent(new MouseEvent("click", { bubbles: true }));
   }
 });
 

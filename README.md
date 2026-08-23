@@ -18,7 +18,7 @@ You talk to your coding agent dozens of times a day across many projects — the
 ## Features
 
 - 📝 **Captures your inputs only** — typed in TUI or pi-web. Skill invocations (`/skill:name`) are recorded as one line, never the expanded prompt body. Subagent sessions (in-memory or persisted with `type#hash` names) and extension-injected messages are excluded on both write and read paths.
-- 🧭 **Four timeline views** — 💬 *Conversations* (flat, titled by session name or first input), 📅 *By day*, 🌲 *Tree* (machine → project → conversation), 📊 *Analysis*.
+- 🧭 **Five timeline views** — 💬 *Conversations* (flat, titled by session name or first input), 📅 *By day*, 🌲 *Tree* (machine → project → conversation), 🐟 *Fishbone* (spine = the day, bones = conversations, colored by project), 📊 *Analysis*.
 - 🖥 **Multi-machine aware** — every entry carries a machine GUID + hostname; machines with duplicate hostnames never collide.
 - 🔁 **Git-backed, multi-host sync** — data lives in its own git repo (`~/.pi/trail`). Point it at any remote and multiple machines append, rebase onto each other and push automatically. Append-only JSONL + `merge=union` means concurrent appends never conflict.
 - 📌 **Memos & reminders** — pin any input as a memo, set due-date reminders; annotations are append-only events, so they sync safely too.
@@ -94,7 +94,7 @@ Your data stays in `~/.pi/trail` (a normal git repo) — it's yours.
 
 ## 中文简介
 
-**pi trail** 自动记录你在 pi 里亲手输入的每一条指令（TUI / pi-web 均可，子代理与注入消息自动排除），存为本地 git 仓库，并在网页里按 **对话 / 按天 / 树形（电脑→项目→对话）/ AI 项目分析** 四种视图呈现。支持备忘录、到期提醒、多主机 git 同步（互相变基、并集合并）。AI 分析纯手动触发，使用你已有的 OpenRouter key。数据 100% 本地，卸载后数据仍是你的 git 仓库。
+**pi trail** 自动记录你在 pi 里亲手输入的每一条指令（TUI / pi-web 均可，子代理与注入消息自动排除），存为本地 git 仓库，并在网页里按 **对话 / 按天 / 树形（电脑→项目→对话）/ 鱼骨图 / AI 项目分析** 五种视图呈现。支持备忘录、到期提醒、多主机 git 同步（互相变基、并集合并）。AI 分析纯手动触发，使用你已有的 OpenRouter key。数据 100% 本地，卸载后数据仍是你的 git 仓库。
 
 ## License
 
