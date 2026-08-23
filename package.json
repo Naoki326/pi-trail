@@ -24,6 +24,7 @@
     "public/",
     "server.mjs",
     "README.md",
+    "README.en.md",
     "LICENSE"
   ],
   "peerDependencies": {

@@ -1,5 +1,7 @@
 # pi trail
 
+[中文](README.md) · [English](README.en.md)
+
 **你的 AI 工作轨迹，自动记录。**
 **Your AI work journal — written by itself.**
 
@@ -93,9 +95,7 @@ pi remove npm:pi-trail
 
 数据保留在 `~/.pi/trail`（一个普通 git 仓库）——它是你的。
 
-## English
-
-**pi trail** is a pi package that records every input *you* type into the AI coding assistant (TUI & pi-web; subagent briefs and injected messages are filtered out), stores them in a local git repo, and serves a web UI with five views — conversations, by-day, tree (machine → project → conversation), fishbone (per-project spine, per-conversation bones anchored at end time, stable colors, per-input spurs) and AI project analysis (manual trigger, uses your OpenRouter key). Memos, reminders, and multi-machine git sync (mutual rebase + union merge) included. Local-first; your data stays yours. MIT.
+*(English version: [README.en.md](README.en.md).)*
 
 ## License
 
