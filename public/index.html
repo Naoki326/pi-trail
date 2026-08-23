@@ -62,7 +62,8 @@
   g.bone .hit { pointer-events: stroke; cursor: pointer; }
   g.bone text { pointer-events: none; }
   g.bone line { transition: stroke-width .1s; }
-  g.bone:hover line { stroke-width: 4; }
+  g.bone:hover line:not(.hit) { stroke-width: 4; }
+  g.bone .hit { stroke-width: 16 !important; }
   g.bone text { opacity: .8; }
   g.bone:hover text, g.bone.on text { opacity: 1; }
   g.bone.on line { filter: drop-shadow(0 0 3px var(--accent)); }

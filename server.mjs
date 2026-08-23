@@ -135,7 +135,7 @@ const SUBAGENT_NAME_RE = /^[^#\s]+#[0-9a-f]+$/i;
 
 let sessionsIndex = null; // sessionId -> session 文件路径
 let sessionsIndexedAt = 0;
-const sessionMetaCache = new Map();
+const sessionMetaCache = new Map(); // sid -> { at, parent, name, subagent }；未定性结果 60s 后重查（子代理名字可能刚落盘）
 
 function indexSessions() {
   const map = new Map();
@@ -155,7 +155,8 @@ function indexSessions() {
 function sessionMeta(sid) {
   if (!sid) return null;
   const key = sid.toLowerCase();
-  if (sessionMetaCache.has(key)) return sessionMetaCache.get(key);
+  const cached = sessionMetaCache.get(key);
+  if (cached && (cached.subagent || Date.now() - cached.at <= 60000)) return cached;
   if (!sessionsIndex || Date.now() - sessionsIndexedAt > 60000) indexSessions();
   const file = sessionsIndex.get(key);
   let meta = { parent: false, subagent: false };
@@ -173,6 +174,7 @@ function sessionMeta(sid) {
       meta = { parent: !!header.parentSession, name, subagent: !!header.parentSession && !!name && SUBAGENT_NAME_RE.test(name) };
     } catch { /* 读失败按非子代理 */ }
   }
+  meta.at = Date.now();
   sessionMetaCache.set(key, meta);
   return meta;
 }
