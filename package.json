@@ -1,0 +1,32 @@
+{
+  "name": "pi-trail",
+  "version": "2.0.0",
+  "description": "Automatically record every input you type into pi, review it as a self-writing work journal — conversations, projects, memos, reminders, and AI-powered project progress analysis. Multi-machine sync via git.",
+  "keywords": ["pi-package", "pi", "ai", "journal", "tracking", "productivity"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Naoki326/pi-trail.git"
+  },
+  "homepage": "https://github.com/Naoki326/pi-trail#readme",
+  "bugs": {
+    "url": "https://github.com/Naoki326/pi-trail/issues"
+  },
+  "files": [
+    "extensions/",
+    "public/",
+    "server.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions"],
+    "image": "https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-conversations.png"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
