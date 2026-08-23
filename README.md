@@ -18,7 +18,7 @@ You talk to your coding agent dozens of times a day across many projects — the
 ## Features
 
 - 📝 **Captures your inputs only** — typed in TUI or pi-web. Skill invocations (`/skill:name`) are recorded as one line, never the expanded prompt body. Subagent sessions (in-memory or persisted with `type#hash` names) and extension-injected messages are excluded on both write and read paths.
-- 🧭 **Five timeline views** — 💬 *Conversations* (flat, titled by session name or first input), 📅 *By day*, 🌲 *Tree* (machine → project → conversation), 🐟 *Fishbone* (spine = the day, bones = conversations, colored by project), 📊 *Analysis*.
+- 🧭 **Five timeline views** — 💬 *Conversations* (flat, titled by session name or first input), 📅 *By day*, 🌲 *Tree* (machine → project → conversation), 🐟 *Fishbone* (spine = project timeline, bones = conversations anchored at their end time, colored by project; expanding draws a small spur per input), 📊 *Analysis*.
 - 🖥 **Multi-machine aware** — every entry carries a machine GUID + hostname; machines with duplicate hostnames never collide.
 - 🔁 **Git-backed, multi-host sync** — data lives in its own git repo (`~/.pi/trail`). Point it at any remote and multiple machines append, rebase onto each other and push automatically. Append-only JSONL + `merge=union` means concurrent appends never conflict.
 - 📌 **Memos & reminders** — pin any input as a memo, set due-date reminders; annotations are append-only events, so they sync safely too.
