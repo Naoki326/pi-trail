@@ -457,7 +457,7 @@ function renderFish(list) {
     projs.get(e.cwd).push(e);
   }
   const arr = [...projs.entries()].sort((a, b) => b[1][0].ts - a[1][0].ts); // 最近活跃在前
-  let html = `<div class="introBar">🐟 每根鱼刺＝<b>一场对话</b>（鱼骨＝该项目的时间轴，不同对话各占一根刺）· 刺越粗 / 标签尾数字越大＝该对话输入越多 · 悬停看完整信息，点击展开</div>`;
+  let html = `<div class="introBar">🐟 每根鱼刺＝<b>一场对话</b>（鱼骨＝该项目的时间轴，不同对话各占一根刺）· 刺越粗 / 标签尾数字越大＝该对话输入越多 · 点击展开，再次点击同一根刺或按「收起 ✕」关闭</div>`;
   for (const [cwd, items] of arr) {
     const col = projectColor(cwd);
     const convs = new Map();
@@ -531,7 +531,7 @@ function renderFish(list) {
       const c = cs.find((x) => x.sid === openSid);
       if (c) {
         const lb = labelOf(c);
-        expandedHtml = `<div style="border-left:3px solid ${col};padding-left:12px;margin:6px 0 10px"><div style="font-size:12px;color:var(--dim);margin:4px 0">💬 <span style="color:${col}">●</span> ${esc(lb.full)} · ${fmtDate(c.start)} ${fmtTime(c.start)} 开始 · ${c.es.length} 条</div>${c.es.slice().sort((a, b) => b.ts - a.ts).map((e) => entryHtml(e, false, true)).join("")}</div>`;
+        expandedHtml = `<div style="border-left:3px solid ${col};padding-left:12px;margin:6px 0 10px"><div style="font-size:12px;color:var(--dim);margin:4px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span>💬 <span style="color:${col}">●</span> ${esc(lb.full)} · ${fmtDate(c.start)} ${fmtTime(c.start)} 开始 · ${c.es.length} 条</span><button class="fishClose" data-key="${esc(pfx + ":" + c.sid)}" title="收起这场对话" style="background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:5px;padding:1px 8px;cursor:pointer;font-size:12px">收起 ✕</button></div>${c.es.slice().sort((a, b) => b.ts - a.ts).map((e) => entryHtml(e, false, true)).join("")}</div>`;
       }
     }
     html += `<section class="day"><h2 style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="width:10px;height:10px;border-radius:3px;background:${col};display:inline-block;flex:none"></span>${esc(projName(cwd))} <span style="font-weight:400;font-size:12px">· ${items.length} 条 · ${cs.length} 场对话 · ${fmtDate(items[items.length - 1].ts)} ~ ${fmtDate(items[0].ts)} · <span title="${esc(cwd)}">${esc(cwd.length > 46 ? cwd.slice(0, 46) + "…" : cwd)}</span></span></h2><div class="fishWrap"><svg width="${W2}" height="${H}" viewBox="0 0 ${W2} ${H}" xmlns="http://www.w3.org/2000/svg"><line class="spine" x1="8" y1="${spineY}" x2="${W2 - 8}" y2="${spineY}"/>${ticks}${bones}</svg></div>${expandedHtml}</section>`;
@@ -712,6 +712,13 @@ $("#main").addEventListener("click", async (ev) => {
     const set = defaultCollapsed ? state.expanded : state.collapsed;
     if (set.has(k)) set.delete(k); else set.add(k);
     localStorage.setItem(defaultCollapsed ? "pil-expanded" : "pil-collapsed", JSON.stringify([...set]));
+    render();
+    return;
+  }
+  const closer = ev.target.closest && ev.target.closest(".fishClose");
+  if (closer) {
+    state.expanded.delete(closer.dataset.key);
+    localStorage.setItem("pil-expanded", JSON.stringify([...state.expanded]));
     render();
     return;
   }
