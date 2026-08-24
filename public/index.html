@@ -477,19 +477,23 @@ function renderFish(list) {
     const cs = [...convs.entries()]
       .map(([sid, es]) => ({ sid, es, start: es.reduce((m, e) => Math.min(m, e.ts), Infinity), end: es.reduce((m, e) => Math.max(m, e.ts), 0) }))
       .sort((a, b) => a.end - b.end); // 按结束时间排列——鱼刺位置＝对话收尾时刻
-    const W = 900, PAD = 30;
+    const PAD = 30;
     const n = cs.length;
     const nTiers = n > 18 ? 5 : n > 10 ? 4 : 3;
     const tiers = Array.from({ length: nTiers }, (_, i) => 26 + i * 24);
     const maxTier = tiers[tiers.length - 1];
     const t0 = Math.min(...cs.map((c) => c.start)), t1 = Math.max(...cs.map((c) => c.end), t0 + 1); // 轴域覆盖全部对话的开始到结束
-    const X = (ts) => PAD + ((W - 2 * PAD) * (ts - t0)) / (t1 - t0);
     const titleLen = n > 18 ? 8 : 12;
     const labelOf = (c) => {
       const t = convTitle(c.es);
       return { full: t.text, s: `${fmtTime(c.end)} ${t.text}`.slice(0, 7 + titleLen) + ` ·${c.es.length}` };
     };
     const maxLabelW = Math.max(60, ...cs.map((c) => estW(labelOf(c).s)));
+    // 画布宽度自适应容器，避免卡内横向滚动；右端给最右鱼刺的标签留出空间
+    const mainW = document.querySelector("main")?.clientWidth || 900;
+    const W = Math.max(640, mainW - 52);
+    const rightReserve = Math.round(maxLabelW * 0.86 + maxTier * 0.6) + 50;
+    const X = (ts) => PAD + (Math.max(PAD, W - PAD - rightReserve) - PAD) * ((ts - t0) / (t1 - t0));
     const cos35 = 0.819, sin35 = 0.574;
     const dy = Math.round(maxLabelW * sin35) + 14;
     const spineY = maxTier + dy + 6;
