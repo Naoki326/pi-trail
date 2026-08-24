@@ -547,8 +547,9 @@ function renderFish(list) {
     const spanDays = (t1 - t0) / 86400000;
     let ticks = "";
     for (let i = 0; i <= 6; i++) {
-      const tx = PAD + ((W2 - 2 * PAD) * i) / 6;
-      const dd = new Date(t0 + ((t1 - t0) * i) / 6);
+      const tt = t0 + ((t1 - t0) * i) / 6;
+      const tx = X(tt); // 与鱼刺同一映射域，刻度位置才与真实时间对应
+      const dd = new Date(tt);
       const lb = spanDays > 1.5 ? `${pad(dd.getMonth() + 1)}-${pad(dd.getDate())}` : `${pad(dd.getHours())}:${pad(dd.getMinutes())}`;
       ticks += `<line class="tick" x1="${tx}" y1="${spineY - 4}" x2="${tx}" y2="${spineY + 4}"/><text class="tickLabel" x="${tx}" y="${spineY + 16}" text-anchor="middle">${lb}</text>`;
     }
