@@ -465,7 +465,7 @@ function renderFish(list) {
     projs.get(e.cwd).push(e);
   }
   const arr = [...projs.entries()].sort((a, b) => b[1][0].ts - a[1][0].ts); // 最近活跃在前
-  let html = `<div class="introBar">🐟 每根鱼刺＝<b>一场对话</b>，位置＝对话<b>结束</b>时刻，<b>每场对话一种稳定颜色</b>（展开块色条/小刺与鱼刺同色）· 刺越粗 / 标签尾数字越大＝输入越多 · 点击展开：主骨上的小刺＝每次输入的时间点（悬停看内容），再次点击或「收起 ✕」关闭</div>`;
+  let html = `<div class="introBar">🐟 每根鱼刺＝<b>一场对话</b>，按时间顺序<b>等间距</b>排列（虚线＝日期分界，鱼刺标签带具体时刻），<b>每场对话一种稳定颜色</b>（展开块色条/小刺与鱼刺同色）· 刺越粗 / 标签尾数字越大＝输入越多 · 点击展开：主骨上的小刺＝该对话的每次输入（悬停看时间与内容），再次点击或「收起 ✕」关闭</div>`;
   for (const [cwd, items] of arr) {
     const col = projectColor(cwd);
     const convs = new Map();
@@ -476,13 +476,13 @@ function renderFish(list) {
     }
     const cs = [...convs.entries()]
       .map(([sid, es]) => ({ sid, es, start: es.reduce((m, e) => Math.min(m, e.ts), Infinity), end: es.reduce((m, e) => Math.max(m, e.ts), 0) }))
-      .sort((a, b) => a.end - b.end); // 按结束时间排列——鱼刺位置＝对话收尾时刻
+      .sort((a, b) => a.end - b.end); // 按结束时间排序（时间顺序），鱼刺等间距排列（序数刻度）
     const PAD = 30;
     const n = cs.length;
     const nTiers = n > 18 ? 5 : n > 10 ? 4 : 3;
     const tiers = Array.from({ length: nTiers }, (_, i) => 26 + i * 24);
     const maxTier = tiers[tiers.length - 1];
-    const t0 = Math.min(...cs.map((c) => c.start)), t1 = Math.max(...cs.map((c) => c.end), t0 + 1); // 轴域覆盖全部对话的开始到结束
+    const t0 = Math.min(...cs.map((c) => c.start)), t1 = Math.max(...cs.map((c) => c.end), t0 + 1); // 项目头部日期范围用
     const titleLen = n > 18 ? 8 : 12;
     const labelOf = (c) => {
       const t = convTitle(c.es);
@@ -493,25 +493,24 @@ function renderFish(list) {
     const mainW = document.querySelector("main")?.clientWidth || 900;
     const W = Math.max(640, mainW - 52);
     const rightReserve = Math.round(maxLabelW * 0.86 + maxTier * 0.6) + 50;
-    const X = (ts) => PAD + (Math.max(PAD, W - PAD - rightReserve) - PAD) * ((ts - t0) / (t1 - t0));
+    const usable = Math.max(PAD, W - PAD - rightReserve);
     const cos35 = 0.819, sin35 = 0.574;
     const dy = Math.round(maxLabelW * sin35) + 14;
     const spineY = maxTier + dy + 6;
     const H = spineY + maxTier + dy + 8;
-    // 同侧最小间距防重叠（时间序单调，必要时加宽画布）
-    const minGap = 44;
-    const lastX = { u: -Infinity, d: -Infinity };
+    // 序数刻度：鱼刺按时间顺序严格等间距（美观优先；时间关系由鱼刺标签的 HH:MM + 日期分界线表达）
+    const minGap = 44, maxGap = 150;
+    const gap = n > 1 ? Math.min(maxGap, Math.max(minGap, (usable - PAD) / (n - 1))) : 0;
+    const groupW = (n - 1) * gap;
+    const gx0 = n > 1 ? PAD + Math.max(0, (usable - PAD - groupW) / 2) : (PAD + usable) / 2; // 组居中
     let nUp = 0, nDown = 0, maxTipX = 0;
+    let bi = 0;
     for (const c of cs) {
       const side = nUp <= nDown ? -1 : 1;
       c.tier = tiers[(side < 0 ? nUp++ : nDown++) % tiers.length];
       c.side = side;
-      const k = side < 0 ? "u" : "d";
-      let x = X(c.end);
-      if (x - lastX[k] < minGap) x = lastX[k] + minGap;
-      lastX[k] = x;
-      c.x = x;
-      maxTipX = Math.max(maxTipX, x + c.tier * 0.6);
+      c.x = gx0 + gap * bi++;
+      maxTipX = Math.max(maxTipX, c.x + c.tier * 0.6);
     }
     const W2 = Math.max(W, Math.round(maxTipX + maxLabelW * 0.86 + 42));
     // 每项目手风琴：同时只展开一场对话（对应关系一目了然）
@@ -529,29 +528,36 @@ function renderFish(list) {
       const bcol = convColor(c.sid);
       bones += `<g class="bone ${open ? "on" : ""}" data-key="${esc(pfx + ":" + c.sid)}" tabindex="0" role="button" aria-expanded="${open}" title="${esc(`${lb.full}\n${projName(cwd)} · ${c.es.length} 条 · ${fmtDate(c.start)} ${fmtTime(c.start)} – ${fmtTime(c.end)}（开始–结束）`)}"><line class="hit" x1="${bx}" y1="${spineY}" x2="${tipX}" y2="${tipY}" stroke="transparent" stroke-width="16"/><line x1="${bx}" y1="${spineY}" x2="${tipX}" y2="${tipY}" stroke="${bcol}" stroke-width="${Math.min(2 + c.es.length * 0.35, 5)}"/><circle cx="${tipX}" cy="${tipY}" r="2.6" fill="${bcol}"/><text x="${tipX + 3}" y="${ly}" transform="rotate(${rot} ${tipX} ${tipY})" fill="${bcol}" font-size="10">${esc(lb.s)}</text></g>`;
     }
-    // 展开对话的小刺：主骨上标记该对话每次输入的时间点，跨度线连到鱼刺根部
+    // 展开对话的小刺：在鱼刺根两侧的「地盘」内按输入顺序等间距排布，跨度线覆盖首尾小刺
     let subSpurs = "";
     if (openSid) {
       const oc = cs.find((x) => x.sid === openSid);
       if (oc) {
         const scol = convColor(oc.sid);
-        const x0 = Math.max(8, X(oc.start));
-        subSpurs += `<line x1="${x0}" y1="${spineY + 3}" x2="${oc.x}" y2="${spineY + 3}" stroke="${scol}" stroke-width="1.5" opacity="0.35"/>`;
-        for (const e of oc.es) {
-          const x = Math.min(W2 - 8, Math.max(8, X(e.ts)));
+        const half = Math.max(12, Math.min((gap || 90) * 0.45, 60));
+        const sorted = oc.es.slice().sort((a, b) => a.ts - b.ts);
+        const m = sorted.length;
+        const xOf = (k) => (m === 1 ? oc.x : oc.x - half + (2 * half * k) / (m - 1));
+        subSpurs += `<line x1="${xOf(0)}" y1="${spineY + 3}" x2="${xOf(m - 1)}" y2="${spineY + 3}" stroke="${scol}" stroke-width="1.5" opacity="0.35"/>`;
+        sorted.forEach((e, k) => {
+          const x = xOf(k);
           subSpurs += `<line x1="${x}" y1="${spineY - 5}" x2="${x}" y2="${spineY + 5}" stroke="${scol}" stroke-width="2" opacity="0.9"><title>${esc(`${fmtTime(e.ts)} ${e.text.slice(0, 24).replace(/\n/g, " ")}`)}</title></line>`;
-        }
+        });
       }
     }
-    // 时间刻度：跨度 > 1.5 天显示日期，否则显示时刻
-    const spanDays = (t1 - t0) / 86400000;
+    // 日期分界（序数轴的时间参照）：相邻两日鱼刺的中点画短虚线，标签标新一日
     let ticks = "";
-    for (let i = 0; i <= 6; i++) {
-      const tt = t0 + ((t1 - t0) * i) / 6;
-      const tx = X(tt); // 与鱼刺同一映射域，刻度位置才与真实时间对应
-      const dd = new Date(tt);
-      const lb = spanDays > 1.5 ? `${pad(dd.getMonth() + 1)}-${pad(dd.getDate())}` : `${pad(dd.getHours())}:${pad(dd.getMinutes())}`;
-      ticks += `<line class="tick" x1="${tx}" y1="${spineY - 4}" x2="${tx}" y2="${spineY + 4}"/><text class="tickLabel" x="${tx}" y="${spineY + 16}" text-anchor="middle">${lb}</text>`;
+    {
+      const dk = (ts) => { const d = new Date(ts); return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+      let prev = null;
+      cs.forEach((c, idx) => {
+        const k = dk(c.end);
+        if (prev && k !== prev.key) {
+          const at = (cs[idx - 1].x + c.x) / 2;
+          ticks += `<line x1="${at}" y1="${spineY - 12}" x2="${at}" y2="${spineY + 12}" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 3"/><text class="tickLabel" x="${at}" y="${spineY + 16}" text-anchor="middle">${k}</text>`;
+        }
+        prev = { key: k };
+      });
     }
     // 展开的对话：左侧项目色条 + 头部镜像鱼刺标签（时间+标题），与点中的鱼刺一一对应
     let expandedHtml = "";
@@ -616,6 +622,8 @@ function render() {
 
   if (state.tab === "timeline" && state.view === "fish") {
     main.innerHTML = renderFish(list);
+    // 鱼刺按时间序向右延伸：默认滚到最右（最新对话），免拖动；展开/收起重渲染时由外层恢复用户位置
+    document.querySelectorAll(".fishWrap").forEach((el) => { if (el.scrollWidth > el.clientWidth) el.scrollLeft = el.scrollWidth; });
     return;
   }
   if (state.tab === "timeline" && state.view === "analysis") {
