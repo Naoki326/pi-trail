@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>pi trail · 输入轨迹</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23171d24'/%3E%3Cpath d='M10 44 L54 44' stroke='%237d8b99' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M18 44 L18 30' stroke='%234da3ff' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='18' cy='27' r='5' fill='%234da3ff'/%3E%3Cpath d='M32 44 L32 20' stroke='%23ffb84d' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='17' r='5' fill='%23ffb84d'/%3E%3Cpath d='M46 44 L46 33' stroke='%234dcc7a' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='46' cy='30' r='5' fill='%234dcc7a'/%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #101418; --panel: #171d24; --panel2: #1d252e; --border: #2a3440;
@@ -157,7 +158,7 @@
         <button data-tab="timeline" class="active">轨迹</button>
         <button data-tab="memos">备忘录 <span class="badge" id="memoBadge"></span></button>
         <button data-tab="reminders">提醒 <span class="badge" id="remindBadge"></span></button>
-        <button data-tab="reports">📋 日报 <span class="badge" id="reportBadge"></span></button>
+        <button data-tab="ai">🤖 AI <span class="badge" id="reportBadge"></span></button>
       </nav>
       <span id="status"></span>
       <button id="settingsBtn" title="同步设置">⚙</button>
@@ -168,7 +169,6 @@
         <button data-view="day">📅 按天</button>
         <button data-view="tree">🌲 树形</button>
         <button data-view="fish">🐟 鱼骨</button>
-        <button data-view="analysis">📊 分析</button>
       </div>
       <input id="search" type="search" placeholder="搜索输入内容…">
       <select id="projectFilter"><option value="">全部项目</option></select>
@@ -200,11 +200,11 @@
         <input id="cfgAuto" type="checkbox"> 自动同步
       </label>
     </div>
-    <label>分析模型（OpenRouter）
-      <input id="cfgModel" type="text" placeholder="stealth/ox-alpha" style="width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px">
+    <label>分析模型（pi 的模型，下拉选择）
+      <select id="cfgModel" style="width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px"></select>
     </label>
     <label>日报模型（留空则用分析模型）
-      <input id="cfgReportModel" type="text" placeholder="stealth/ox-alpha" style="width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px">
+      <select id="cfgReportModel" style="width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px"></select>
     </label>
     <div style="display:flex;gap:16px">
       <label>日报生成时刻（工作日）
@@ -258,9 +258,8 @@ async function api(path, body) {
   return res.json();
 }
 
-let analysisRendered = false; // 分析视图首次渲染后不随轮询重建（避免阅读中折叠/跳动）
 let fishRendered = false; // 鱼骨视图同样不随轮询重建（保留滚动/悬停状态）
-let reportsRendered = false; // 日报视图同样不随轮询重建（保留展开阅读状态）
+let reportsRendered = false; // AI 视图首次渲染后不随轮询重建（保留展开阅读状态）
 
 async function refresh() {
   try {
@@ -269,13 +268,10 @@ async function refresh() {
     state.meta = m;
     state.reports = r;
     $("#status").textContent = `共 ${e.items.length} 条 · 更新于 ${fmtTime(Date.now())}`;
-    if (state.tab === "timeline" && (state.view === "analysis" || state.view === "fish")) {
-      const rendered = state.view === "analysis" ? analysisRendered : fishRendered;
-      if (!rendered) {
-        if (state.view === "analysis") await ensureAnalysisData();
-        render();
-      }
-    } else if (state.tab === "reports" && !reportsRendered) {
+    if (state.tab === "timeline" && state.view === "fish") {
+      if (!fishRendered) render();
+    } else if (state.tab === "ai" && !reportsRendered) {
+      await ensureAnalysisData();
       render();
     } else {
       render();
@@ -599,38 +595,7 @@ function renderFish(list) {
   return html;
 }
 
-function renderAnalysis() {
-  analysisRendered = true;
-  const main = $("#main");
-  const projs = new Map();
-  for (const e of state.entries) {
-    if (!projs.has(e.cwd)) projs.set(e.cwd, []);
-    projs.get(e.cwd).push(e);
-  }
-  const arr = [...projs.entries()].sort((a, b) => b[1][0].ts - a[1][0].ts);
-  let html = `<div class="introBar">📊 基于该项目文件夹的全部输入调用 AI 推断项目进展 — 手动触发，每次消耗模型配额。当前模型：<b>${esc(state.analysis?.model || "?")}</b>（⚙ 里可换）</div>`;
-  for (const [cwd, items] of arr) {
-    const r = state.analysis?.results?.[cwd];
-    const newest = items[0], oldest = items[items.length - 1];
-    const named = items.find((e) => e.sessionId && e.sessionName)?.sessionName;
-    html += `<div class="entry projCard" data-proj="${esc(cwd)}">
-      <div class="meta">
-        <span class="proj" style="font-size:14px">📁 ${esc(projName(cwd))}</span>
-        <span title="${esc(cwd)}">${esc(cwd)}</span>
-        <span>${items.length} 条输入</span>
-        <span>${fmtDate(oldest.ts)} ~ ${fmtDate(newest.ts)}</span>
-        ${r ? `<span>上次分析 ${fmtDate(r.ts)} ${fmtTime(r.ts)}</span>` : "<span style='opacity:.6'>未分析</span>"}
-      </div>
-      <div class="actions" style="display:flex">
-        <button class="analyzeBtn ${r ? "on" : ""}" data-id="${esc(cwd)}">${r ? "🤖 重新分析" : "🤖 分析"}</button>
-      </div>
-      ${r ? `<details class="analysisResult" ${state.openResults.has(cwd) ? "open" : ""}><summary>查看分析结果（${r.inputCount} 条输入 · ${esc(r.model)}）</summary><div class="analysisMd">${mdToHtml(r.result)}</div></details>` : ""}
-    </div>`;
-  }
-  main.innerHTML = html;
-}
-
-function renderReports() {
+function renderAI() {
   reportsRendered = true;
   const main = $("#main");
   const r = state.reports || { reports: {}, model: "", reportTime: "08:30", today: "", lastWorkday: "", missing: [] };
@@ -639,7 +604,10 @@ function renderReports() {
   const lw = r.lastWorkday || "";
   const has = r.reports[lw];
 
-  let html = `<div class="introBar">📋 每日日报 — 每个工作日早上 ${esc(r.reportTime)} 自动分析上一个工作日的全部输入（周一分析上周五）；也可手动生成或补跑。当前模型：<b>${esc(r.model || "?")}</b>（⚙ 里可换）</div>`;
+  let html = `<div class="introBar">🤖 AI 工作台 — <b>每日日报</b>（工作日早上 ${esc(r.reportTime)} 自动分析上个工作日，周一分析上周五）+ <b>项目分析</b>（按项目手动触发）。模型：<b>${esc(r.model || "?")}</b>（⚙ 里可换，支持 pi 的 provider/model 格式）</div>`;
+
+  // ---------- 日报区 ----------
+  html += `<h2 style="margin:14px 0 8px;font-size:15px">📋 每日日报</h2>`;
 
   // 最近工作日状态条
   if (lw) {
@@ -684,6 +652,33 @@ function renderReports() {
       <details class="analysisResult"><summary>展开日报</summary><div class="analysisMd">${mdToHtml(rep.result)}</div></details>
     </div>`;
   }
+
+  // ---------- 项目分析区 ----------
+  html += `<h2 style="margin:18px 0 8px;font-size:15px">📊 项目分析</h2>`;
+  html += `<p style="color:var(--dim);font-size:12px;margin-bottom:8px">基于项目全部输入调用 AI 推断进展 — 手动触发，每次消耗模型配额。</p>`;
+  const projs = new Map();
+  for (const e of state.entries) {
+    if (!projs.has(e.cwd)) projs.set(e.cwd, []);
+    projs.get(e.cwd).push(e);
+  }
+  const arr = [...projs.entries()].sort((a, b) => b[1][0].ts - a[1][0].ts);
+  for (const [cwd, items] of arr) {
+    const ar = state.analysis?.results?.[cwd];
+    const newest = items[0], oldest = items[items.length - 1];
+    html += `<div class="entry projCard" data-proj="${esc(cwd)}">
+      <div class="meta">
+        <span class="proj" style="font-size:14px">📁 ${esc(projName(cwd))}</span>
+        <span title="${esc(cwd)}">${esc(cwd)}</span>
+        <span>${items.length} 条输入</span>
+        <span>${fmtDate(oldest.ts)} ~ ${fmtDate(newest.ts)}</span>
+        ${ar ? `<span>上次分析 ${fmtDate(ar.ts)} ${fmtTime(ar.ts)}</span>` : "<span style='opacity:.6'>未分析</span>"}
+      </div>
+      <div class="actions" style="display:flex">
+        <button class="analyzeBtn ${ar ? "on" : ""}" data-id="${esc(cwd)}">${ar ? "🤖 重新分析" : "🤖 分析"}</button>
+      </div>
+      ${ar ? `<details class="analysisResult" ${state.openResults.has(cwd) ? "open" : ""}><summary>查看分析结果（${ar.inputCount} 条输入 · ${esc(ar.model)}）</summary><div class="analysisMd">${mdToHtml(ar.result)}</div></details>` : ""}
+    </div>`;
+  }
   main.innerHTML = html;
 }
 
@@ -709,10 +704,6 @@ function render() {
     main.innerHTML = renderFish(list);
     // 鱼刺按时间序向右延伸：默认滚到最右（最新对话），免拖动；展开/收起重渲染时由外层恢复用户位置
     document.querySelectorAll(".fishWrap").forEach((el) => { if (el.scrollWidth > el.clientWidth) el.scrollLeft = el.scrollWidth; });
-    return;
-  }
-  if (state.tab === "timeline" && state.view === "analysis") {
-    renderAnalysis();
     return;
   }
   if (state.tab === "timeline") {
@@ -746,8 +737,8 @@ function render() {
           <button class="memoBtn on" data-id="${e.id}">取消备忘</button>
         </div>
       </div>`).join("");
-  } else if (state.tab === "reports") {
-    renderReports();
+  } else if (state.tab === "ai") {
+    renderAI();
   } else {
     // 提醒 tab 原有逻辑
     const now = Date.now();
@@ -774,7 +765,7 @@ document.querySelectorAll(".tabs button").forEach((b) =>
     state.tab = b.dataset.tab;
     document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x === b));
     syncHeader();
-    if (state.tab === "timeline" && state.view === "analysis") await ensureAnalysisData();
+    if (state.tab === "ai") await ensureAnalysisData();
     render();
   }));
 syncHeader();
@@ -784,7 +775,6 @@ document.querySelectorAll("#viewToggle button").forEach((b) =>
     state.view = b.dataset.view;
     localStorage.setItem("pil-view", state.view);
     syncViewToggle();
-    if (state.view === "analysis") await ensureAnalysisData();
     render();
   }));
 function syncViewToggle() {
@@ -881,7 +871,7 @@ $("#main").addEventListener("click", async (ev) => {
       if (rep && rep.error) throw new Error(rep.error);
       if (!state.reports) state.reports = { reports: {} };
       state.reports.reports[day] = rep;
-      renderReports();
+      renderAI();
     } catch (e) {
       alert("日报生成失败：" + (e && e.message ? e.message : e));
       btn.disabled = false;
@@ -894,7 +884,7 @@ $("#main").addEventListener("click", async (ev) => {
     try {
       await api("/api/report/confirm", { day });
       if (state.reports?.reports?.[day]) state.reports.reports[day].confirmed = true;
-      renderReports();
+      renderAI();
     } catch (e) {
       alert("确认失败：" + (e && e.message ? e.message : e));
     }
@@ -918,7 +908,7 @@ $("#main").addEventListener("click", async (ev) => {
       }
     }
     if (!failed) state.reports.missing = state.reports.missing.filter((d) => !missing.includes(d));
-    renderReports();
+    renderAI();
     return;
   }
   if (btn && btn.classList.contains("analyzeBtn")) {
@@ -933,7 +923,7 @@ $("#main").addEventListener("click", async (ev) => {
     } catch (e) {
       alert("分析失败：" + (e && e.message ? e.message : e));
     }
-    renderAnalysis();
+    renderAI();
     return;
   }
   if (btn && btn.classList.contains("del")) {
@@ -964,13 +954,46 @@ function fmtSync(s) {
   return s.ok ? `上次同步 ${t} · 成功` : `上次同步 ${t} · 失败：${s.error || "未知错误"}`;
 }
 
+// 填充模型下拉：列出 pi 的 models.json 全部模型（provider/model），保留当前配置值
+let modelListCache = null;
+async function populateModelSelects(curAnalysis, curReport) {
+  let list = modelListCache;
+  if (!list) {
+    try {
+      const r = await api("/api/models");
+      list = r.models || [];
+      modelListCache = list;
+    } catch { list = []; }
+  }
+  const opt = (v, label) => `<option value="${esc(v)}" ${v === curAnalysis || v === curReport ? "" : ""}>${esc(label)}</option>`;
+  // 空选项（默认）
+  const empty = (cur, sel) => `<option value="" ${cur ? "" : "selected"}>（默认）</option>`;
+  const build = (cur, selId) => {
+    const groups = new Map();
+    for (const m of list) {
+      if (!groups.has(m.provider)) groups.set(m.provider, []);
+      groups.get(m.provider).push(m);
+    }
+    let html = empty(cur, selId);
+    for (const [pid, ms] of groups) {
+      html += `<optgroup label="${esc(pid)}">`;
+      for (const m of ms) {
+        html += `<option value="${esc(m.id)}" ${m.id === cur ? "selected" : ""}>${esc(m.name)}${m.reasoning ? " 🧠" : ""}</option>`;
+      }
+      html += `</optgroup>`;
+    }
+    return html;
+  };
+  $("#cfgModel").innerHTML = build(curAnalysis, "cfgModel");
+  $("#cfgReportModel").innerHTML = build(curReport, "cfgReportModel");
+}
+
 $("#settingsBtn").addEventListener("click", async () => {
   const cfg = await api("/api/config");
+  await populateModelSelects(cfg.analysisModel || "", cfg.reportModel || "");
   $("#cfgRemote").value = cfg.remote || "";
   $("#cfgInterval").value = cfg.syncIntervalSec ?? 120;
   $("#cfgAuto").checked = cfg.autoSync !== false;
-  $("#cfgModel").value = cfg.analysisModel || "";
-  $("#cfgReportModel").value = cfg.reportModel || "";
   $("#cfgReportTime").value = cfg.reportTime || "08:30";
   $("#syncStatus").textContent = fmtSync(cfg.lastSync);
   $("#settingsDlg").showModal();

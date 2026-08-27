@@ -514,14 +514,103 @@ function openrouterKey() {
   }
 }
 
+// ---------- pi 模型基础设施复用 ----------
+// 模型名支持两种形态：
+//   1. "providerId/modelId" —— 读 pi 的 models.json/auth.json 解析 baseUrl/api/key（复用 pi 配置，不落盘）
+//   2. 其他 —— 视为 OpenRouter 模型 ID（向后兼容）
+
+const PI_MODELS_FILE = join(homedir(), ".pi", "agent", "models.json");
+const PI_AUTH_FILE = join(homedir(), ".pi", "agent", "auth.json");
+
+function readJson(p) {
+  try {
+    if (existsSync(p)) return JSON.parse(readFileSync(p, "utf8"));
+  } catch { /* 读失败按空处理 */ }
+  return null;
+}
+
+// 解析 models.json apiKey 的值：支持 $ENV / !command / 字面量（与 pi 一致，见 models.md）
+function resolveApiKeyValue(v) {
+  if (typeof v !== "string" || !v) return "";
+  if (v.startsWith("$") && !v.startsWith("$$") && !v.startsWith("$!")) {
+    const name = v.slice(1);
+    return process.env[name] || "";
+  }
+  if (v.startsWith("!") && !v.startsWith("$$")) {
+    try {
+      const out = execFileSync(v.slice(1), { shell: true, encoding: "utf8", windowsHide: true });
+      return (out || "").trim();
+    } catch {
+      return "";
+    }
+  }
+  if (v.startsWith("$$")) return v.slice(1); // $$ 字面量转义
+  if (v.startsWith("$!")) return v.slice(1);
+  return v;
+}
+
+// 解析 provider 的完整调用配置；找不到返回 null（调用方决定兜底）
+function resolveProvider(providerId) {
+  const models = readJson(PI_MODELS_FILE);
+  const p = models?.providers?.[providerId];
+  if (!p) return null;
+  const api = p.api || "openai-completions";
+  const baseUrl = (p.baseUrl || "").replace(/\/+$/, "");
+  // 认证优先级与 pi 一致：auth.json > env > models.json apiKey（见 providers.md Resolution Order）
+  const auth = readJson(PI_AUTH_FILE);
+  const authKey = auth?.[providerId]?.key;
+  const key = authKey || resolveApiKeyValue(p.apiKey) || "";
+  if (!baseUrl || !key) return null;
+  return { api, baseUrl, key, headers: p.headers || {} };
+}
+
+// 解析模型名："providerId/modelId" → { providerId, modelId }；否则 null（OpenRouter 模型）
+function splitModelName(model) {
+  if (typeof model !== "string") return null;
+  const i = model.indexOf("/");
+  if (i <= 0 || i === model.length - 1) return null;
+  return { providerId: model.slice(0, i), modelId: model.slice(i + 1) };
+}
+
 // 统一模型调用：返回 markdown 文本；失败抛错
 async function callModel(prompt, model) {
-  const key = openrouterKey();
-  if (!key) throw new Error("未找到 openrouter API key（~/.pi/agent/auth.json）");
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  const split = splitModelName(model);
+  const prov = split ? resolveProvider(split.providerId) : null;
+
+  if (split && !prov) {
+    // provider 名不存在：给出最接近的候选（拼写纠错提示）
+    const models = readJson(PI_MODELS_FILE);
+    const ids = Object.keys(models?.providers || {});
+    const cand = ids.filter((id) => {
+      const a = split.providerId.toLowerCase(), b = id.toLowerCase();
+      return a === b || a.includes(b) || b.includes(a) || a.replace(/k/g, "ck") === b.replace(/k/g, "ck");
+    });
+    const hint = cand.length ? `（是不是想写 ${cand[0]}？）` : `（可用 provider：${ids.join(", ") || "无"}）`;
+    throw new Error(`模型 provider "${split.providerId}" 不在 pi 的 models.json 里${hint}`);
+  }
+
+  // 无 provider 解析 → 走 OpenRouter（向后兼容；provider 名不存在的模型也视为 OpenRouter ID）
+  const key = prov ? prov.key : openrouterKey();
+  if (!key) throw new Error("未找到 API key（~/.pi/agent/auth.json 或 models.json）");
+  const baseUrl = prov ? prov.baseUrl : "https://openrouter.ai/api/v1";
+  const modelId = prov ? split.modelId : model;
+
+  let url, body;
+  if (prov && prov.api === "anthropic-messages") {
+    url = `${baseUrl}/v1/messages`;
+    body = { model: modelId, max_tokens: 8192, messages: [{ role: "user", content: prompt }] };
+  } else if (prov && prov.api === "openai-responses") {
+    url = `${baseUrl}/responses`;
+    body = { model: modelId, input: prompt };
+  } else {
+    url = `${baseUrl}/chat/completions`;
+    body = { model: modelId, messages: [{ role: "user", content: prompt }], temperature: 0.3 };
+  }
+
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }], temperature: 0.3 }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(180000),
   });
   if (!res.ok) {
@@ -529,7 +618,14 @@ async function callModel(prompt, model) {
     throw new Error(`模型 API ${res.status}：${t.slice(0, 200)}`);
   }
   const data = await res.json();
-  const result = data?.choices?.[0]?.message?.content;
+  let result = "";
+  if (prov && prov.api === "anthropic-messages") {
+    result = data?.content?.map((b) => b?.text || "").join("") || "";
+  } else if (prov && prov.api === "openai-responses") {
+    result = data?.output_text || data?.output?.map((o) => o?.content?.map((c) => c?.text || "").join("") || "").join("") || "";
+  } else {
+    result = data?.choices?.[0]?.message?.content || "";
+  }
   if (!result) throw new Error("模型返回为空");
   return result;
 }
@@ -777,6 +873,33 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && p === "/api/sync") {
       await syncNow();
       return json(res, 200, lastSync);
+    }
+
+    // pi 模型清单：GET /api/models → 列出 models.json 全部 provider 模型（供下拉选择）
+    if (req.method === "GET" && p === "/api/models") {
+      const models = readJson(PI_MODELS_FILE);
+      const list = [];
+      for (const [pid, p] of Object.entries(models?.providers || {})) {
+        for (const m of p.models || []) {
+          const id = `${pid}/${m.id}`;
+          list.push({
+            id,
+            name: m.name || m.id,
+            provider: pid,
+            reasoning: !!m.reasoning,
+            contextWindow: m.contextWindow || 0,
+            // 该 provider 是否可用（有 baseUrl + 能解析出 key）
+            available: !!resolveProvider(pid),
+          });
+        }
+      }
+      // 追加 OpenRouter 静态清单（无 provider 前缀的旧格式仍可用）
+      const cfg = loadConfig();
+      return json(res, 200, {
+        models: list.sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id)),
+        analysisModel: cfg.analysisModel || "",
+        reportModel: cfg.reportModel || "",
+      });
     }
 
     // 项目分析结果：GET /api/analysis
