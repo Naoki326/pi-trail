@@ -53,6 +53,15 @@
   .analysisMd ul { margin: 4px 0 4px 20px; }
   .analysisMd p { margin: 4px 0; }
   .introBar { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: var(--dim); }
+  .reportToday { margin-bottom: 10px; }
+  .reportToday.unconfirmed, .reportCard.unconfirmed { border-color: var(--danger); }
+  .reportMissing {
+    background: rgba(255,184,77,.08); border: 1px solid var(--accent2); color: var(--accent2);
+    border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .reportCard { margin-bottom: 10px; }
+  .reportCard summary { color: var(--accent); }
   .fishWrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 4px 6px; margin-bottom: 8px; }
   .fishWrap svg { display: block; }
   .fishWrap .spine { stroke: var(--dim); stroke-width: 2; }
@@ -148,6 +157,7 @@
         <button data-tab="timeline" class="active">轨迹</button>
         <button data-tab="memos">备忘录 <span class="badge" id="memoBadge"></span></button>
         <button data-tab="reminders">提醒 <span class="badge" id="remindBadge"></span></button>
+        <button data-tab="reports">📋 日报 <span class="badge" id="reportBadge"></span></button>
       </nav>
       <span id="status"></span>
       <button id="settingsBtn" title="同步设置">⚙</button>
@@ -193,6 +203,14 @@
     <label>分析模型（OpenRouter）
       <input id="cfgModel" type="text" placeholder="stealth/ox-alpha" style="width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px">
     </label>
+    <label>日报模型（留空则用分析模型）
+      <input id="cfgReportModel" type="text" placeholder="stealth/ox-alpha" style="width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px">
+    </label>
+    <div style="display:flex;gap:16px">
+      <label>日报生成时刻（工作日）
+        <input id="cfgReportTime" type="time" value="08:30" style="margin-top:4px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px">
+      </label>
+    </div>
     <button id="syncNowBtn" style="align-self:flex-start">立即同步</button>
     <div id="syncStatus" style="font-size:12px;color:var(--dim)"></div>
   </div>
@@ -214,6 +232,7 @@ const state = {
   search: "",
   project: "",
   openResults: new Set(),
+  reports: { reports: {}, model: "", reportTime: "08:30", today: "", lastWorkday: "", missing: [] },
 };
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -230,6 +249,9 @@ function toLocalInput(ts) {
 }
 
 async function api(path, body) {
+  // 反代场景（nginx 统一入口）下应用挂在子路径（如 /trail/），根相对路径会绕过前缀；
+  // 转成相对路径后由浏览器按当前页 URL 解析：直连 7799 与反代 /trail/ 两种方式均可工作。
+  if (path.startsWith("/")) path = path.slice(1);
   const res = await fetch(path, body
     ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     : undefined);
@@ -238,12 +260,14 @@ async function api(path, body) {
 
 let analysisRendered = false; // 分析视图首次渲染后不随轮询重建（避免阅读中折叠/跳动）
 let fishRendered = false; // 鱼骨视图同样不随轮询重建（保留滚动/悬停状态）
+let reportsRendered = false; // 日报视图同样不随轮询重建（保留展开阅读状态）
 
 async function refresh() {
   try {
-    const [e, m] = await Promise.all([api("/api/entries"), api("/api/meta")]);
+    const [e, m, r] = await Promise.all([api("/api/entries"), api("/api/meta"), api("/api/reports")]);
     state.entries = e.items;
     state.meta = m;
+    state.reports = r;
     $("#status").textContent = `共 ${e.items.length} 条 · 更新于 ${fmtTime(Date.now())}`;
     if (state.tab === "timeline" && (state.view === "analysis" || state.view === "fish")) {
       const rendered = state.view === "analysis" ? analysisRendered : fishRendered;
@@ -251,6 +275,8 @@ async function refresh() {
         if (state.view === "analysis") await ensureAnalysisData();
         render();
       }
+    } else if (state.tab === "reports" && !reportsRendered) {
+      render();
     } else {
       render();
     }
@@ -604,6 +630,63 @@ function renderAnalysis() {
   main.innerHTML = html;
 }
 
+function renderReports() {
+  reportsRendered = true;
+  const main = $("#main");
+  const r = state.reports || { reports: {}, model: "", reportTime: "08:30", today: "", lastWorkday: "", missing: [] };
+  const wd = ["日", "一", "二", "三", "四", "五", "六"][new Date().getDay()];
+  const isWd = new Date().getDay() !== 0 && new Date().getDay() !== 6;
+  const lw = r.lastWorkday || "";
+  const has = r.reports[lw];
+
+  let html = `<div class="introBar">📋 每日日报 — 每个工作日早上 ${esc(r.reportTime)} 自动分析上一个工作日的全部输入（周一分析上周五）；也可手动生成或补跑。当前模型：<b>${esc(r.model || "?")}</b>（⚙ 里可换）</div>`;
+
+  // 最近工作日状态条
+  if (lw) {
+    html += `<div class="entry projCard reportToday ${has && !has.confirmed ? "unconfirmed" : ""}">
+      <div class="meta">
+        <span>${isWd ? `今日周${wd}` : "今天周末"}</span>
+        <span>最近工作日：<b>${lw}</b></span>
+        <span>${has ? `日报已生成（${has.inputCount} 条输入）${has.confirmed ? " · ✓ 已确认" : " · 待确认"}` : "日报未生成"}</span>
+      </div>
+      <div class="actions" style="display:flex">
+        ${has ? (has.confirmed ? `<button class="reportRegen" data-day="${lw}">🔄 重新生成</button>` : `<button class="reportConfirm" data-day="${lw}">✓ 确认</button><button class="reportRegen" data-day="${lw}">🔄 重新生成</button>`) : `<button class="reportGen" data-day="${lw}">⚡ 生成昨日日报</button>`}
+      </div>
+    </div>`;
+  }
+
+  // 缺失补跑提示（最近 10 天）
+  if (r.missing && r.missing.length) {
+    html += `<div class="reportMissing">⚠ 最近 10 天有 <b>${r.missing.length}</b> 个工作日缺少日报：${r.missing.map(esc).join("、")} <button class="reportGenMissing">一键补齐</button></div>`;
+  }
+
+  // 日报卡片（倒序）
+  const days = Object.keys(r.reports || {}).sort().reverse();
+  if (!days.length) {
+    html += `<div class="empty">还没有日报 — 点上方「⚡ 生成昨日日报」，或等工作日早上自动生成</div>`;
+  }
+  for (const d of days) {
+    const rep = r.reports[d];
+    const dw = ["日", "一", "二", "三", "四", "五", "六"][new Date(`${d}T00:00:00`).getDay()];
+    html += `<div class="entry projCard reportCard ${rep.confirmed ? "" : "unconfirmed"}" data-day="${d}">
+      <div class="meta">
+        <span class="proj">📋 ${d} 周${dw}</span>
+        <span>${rep.inputCount} 条输入</span>
+        <span>${(rep.projects || []).map(esc).join("、")}</span>
+        <span>${esc(rep.model)}</span>
+        <span>生成于 ${fmtDate(rep.ts)} ${fmtTime(rep.ts)}</span>
+        ${rep.confirmed ? `<span style="color:var(--ok)">✓ 已确认</span>` : `<span style="color:var(--danger)">待确认</span>`}
+      </div>
+      <div class="actions" style="display:flex">
+        <button class="reportConfirm" data-day="${d}">✓ 确认</button>
+        <button class="reportRegen" data-day="${d}">🔄 重新生成</button>
+      </div>
+      <details class="analysisResult"><summary>展开日报</summary><div class="analysisMd">${mdToHtml(rep.result)}</div></details>
+    </div>`;
+  }
+  main.innerHTML = html;
+}
+
 function render() {
   // 项目过滤器选项
   const projs = [...new Set(state.entries.map((e) => projName(e.cwd)))].sort();
@@ -614,8 +697,10 @@ function render() {
   // 徽标与列表同口径：只统计条目仍存在的备忘/提醒（孤儿事件不计）
   const memoCount = state.entries.filter((e) => state.meta.memos[e.id] && !state.meta.memos[e.id].done).length;
   const remindCount = state.entries.filter((e) => state.meta.reminders[e.id] && state.meta.reminders[e.id].due > Date.now()).length;
+  const reportCount = Object.values(state.reports?.reports || {}).filter((x) => !x.confirmed).length;
   $("#memoBadge").textContent = memoCount ? `(${memoCount})` : "";
   $("#remindBadge").textContent = remindCount ? `(${remindCount})` : "";
+  $("#reportBadge").textContent = reportCount ? `(${reportCount})` : "";
 
   const main = $("#main");
   const list = visible();
@@ -661,6 +746,8 @@ function render() {
           <button class="memoBtn on" data-id="${e.id}">取消备忘</button>
         </div>
       </div>`).join("");
+  } else if (state.tab === "reports") {
+    renderReports();
   } else {
     // 提醒 tab 原有逻辑
     const now = Date.now();
@@ -785,6 +872,55 @@ $("#main").addEventListener("click", async (ev) => {
     await api("/api/remind", { id, due: null });
     refresh(); return;
   }
+  if (btn && (btn.classList.contains("reportGen") || btn.classList.contains("reportRegen"))) {
+    const day = btn.dataset.day;
+    btn.disabled = true;
+    btn.textContent = "⏳ 生成中…（可能半分钟）";
+    try {
+      const rep = await api("/api/report/generate", { day });
+      if (rep && rep.error) throw new Error(rep.error);
+      if (!state.reports) state.reports = { reports: {} };
+      state.reports.reports[day] = rep;
+      renderReports();
+    } catch (e) {
+      alert("日报生成失败：" + (e && e.message ? e.message : e));
+      btn.disabled = false;
+      btn.textContent = "重试";
+    }
+    return;
+  }
+  if (btn && btn.classList.contains("reportConfirm")) {
+    const day = btn.dataset.day;
+    try {
+      await api("/api/report/confirm", { day });
+      if (state.reports?.reports?.[day]) state.reports.reports[day].confirmed = true;
+      renderReports();
+    } catch (e) {
+      alert("确认失败：" + (e && e.message ? e.message : e));
+    }
+    return;
+  }
+  if (btn && btn.classList.contains("reportGenMissing")) {
+    btn.disabled = true;
+    btn.textContent = "⏳ 补齐中…";
+    const missing = (state.reports?.missing || []).slice();
+    let failed = false;
+    for (const day of missing) {
+      try {
+        const rep = await api("/api/report/generate", { day });
+        if (rep && rep.error) throw new Error(rep.error);
+        if (!state.reports) state.reports = { reports: {} };
+        state.reports.reports[day] = rep;
+      } catch (e) {
+        failed = true;
+        alert(`${day} 生成失败：${e && e.message ? e.message : e}`);
+        break;
+      }
+    }
+    if (!failed) state.reports.missing = state.reports.missing.filter((d) => !missing.includes(d));
+    renderReports();
+    return;
+  }
   if (btn && btn.classList.contains("analyzeBtn")) {
     const proj = btn.dataset.id;
     btn.disabled = true;
@@ -834,6 +970,8 @@ $("#settingsBtn").addEventListener("click", async () => {
   $("#cfgInterval").value = cfg.syncIntervalSec ?? 120;
   $("#cfgAuto").checked = cfg.autoSync !== false;
   $("#cfgModel").value = cfg.analysisModel || "";
+  $("#cfgReportModel").value = cfg.reportModel || "";
+  $("#cfgReportTime").value = cfg.reportTime || "08:30";
   $("#syncStatus").textContent = fmtSync(cfg.lastSync);
   $("#settingsDlg").showModal();
 });
@@ -844,6 +982,8 @@ $("#cfgSave").addEventListener("click", async () => {
     syncIntervalSec: Number($("#cfgInterval").value),
     autoSync: $("#cfgAuto").checked,
     analysisModel: $("#cfgModel").value.trim(),
+    reportModel: $("#cfgReportModel").value.trim(),
+    reportTime: $("#cfgReportTime").value,
   });
   $("#syncStatus").textContent = "已保存 · " + fmtSync(cfg.lastSync);
 });

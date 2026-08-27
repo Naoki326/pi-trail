@@ -36,6 +36,7 @@ const ENTRIES_FILE = join(STORE_DIR, "entries.jsonl");
 const META_FILE = join(STORE_DIR, "meta.jsonl");
 const OLD_META_FILE = join(STORE_DIR, "meta.json");
 const CONFIG_FILE = join(STORE_DIR, "config.json");
+const REPORTS_FILE = join(STORE_DIR, "reports.json");
 
 const PORT = (() => {
   const i = process.argv.indexOf("--port");
@@ -47,7 +48,7 @@ const PORT = (() => {
 
 // ---------- 配置 ----------
 
-const CONFIG_DEFAULTS = { remote: "", branch: "main", syncIntervalSec: 120, autoSync: true, analysisModel: "stealth/ox-alpha" };
+const CONFIG_DEFAULTS = { remote: "", branch: "main", syncIntervalSec: 120, autoSync: true, analysisModel: "stealth/ox-alpha", reportModel: "", reportTime: "08:30" };
 
 function loadConfig() {
   try {
@@ -513,11 +514,29 @@ function openrouterKey() {
   }
 }
 
+// 统一模型调用：返回 markdown 文本；失败抛错
+async function callModel(prompt, model) {
+  const key = openrouterKey();
+  if (!key) throw new Error("未找到 openrouter API key（~/.pi/agent/auth.json）");
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }], temperature: 0.3 }),
+    signal: AbortSignal.timeout(180000),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`模型 API ${res.status}：${t.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  const result = data?.choices?.[0]?.message?.content;
+  if (!result) throw new Error("模型返回为空");
+  return result;
+}
+
 async function runAnalysis(project) {
   const cfg = loadConfig();
   const model = cfg.analysisModel || "stealth/ox-alpha";
-  const key = openrouterKey();
-  if (!key) throw new Error("未找到 openrouter API key（~/.pi/agent/auth.json）");
 
   const sorted = [...loadEntries().filter((e) => e.cwd === project)].sort((a, b) => a.ts - b.ts);
   if (!sorted.length) throw new Error("该项目没有输入记录");
@@ -551,25 +570,137 @@ ${lines}
 ## 可能的下一步
 根据最近输入的走向推测接下来可能做的事；不确定的内容明确标注是推测。`;
 
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }], temperature: 0.3 }),
-    signal: AbortSignal.timeout(180000),
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`模型 API ${res.status}：${t.slice(0, 200)}`);
-  }
-  const data = await res.json();
-  const result = data?.choices?.[0]?.message?.content;
-  if (!result) throw new Error("模型返回为空");
+  const result = await callModel(prompt, model);
 
   const store = loadAnalysis();
   store[project] = { ts: Date.now(), model, inputCount: sorted.length, result };
   saveAnalysis(store);
   queueCommit();
   return store[project];
+}
+
+// ---------- 每日日报 ----------
+
+const pad2 = (n) => String(n).padStart(2, "0");
+
+function dayStr(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function isWorkday(ds) {
+  const w = new Date(`${ds}T00:00:00`).getDay();
+  return w >= 1 && w <= 5;
+}
+
+// 给定日期往前找最近的工作日（当天不计；周一 → 上周五）
+function prevWorkday(ds) {
+  const d = new Date(`${ds}T00:00:00`);
+  d.setDate(d.getDate() - 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+  return dayStr(d.getTime());
+}
+
+// [from, to] 含两端的工作日列表
+function workdaysInRange(fromDs, toDs) {
+  const out = [];
+  const d = new Date(`${fromDs}T00:00:00`);
+  const end = new Date(`${toDs}T00:00:00`);
+  while (d <= end) {
+    if (d.getDay() >= 1 && d.getDay() <= 5) out.push(dayStr(d.getTime()));
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+
+function loadReports() {
+  try {
+    if (existsSync(REPORTS_FILE)) return JSON.parse(readFileSync(REPORTS_FILE, "utf8"));
+  } catch { /* 损坏则重建 */ }
+  return {};
+}
+
+function saveReports(r) {
+  writeFileSync(REPORTS_FILE, JSON.stringify(r, null, 2), "utf8");
+}
+
+// 最近 10 个自然日内、今天之前、缺少日报的工作日
+function missingWorkdays() {
+  const today = dayStr(Date.now());
+  const store = loadReports();
+  const d = new Date(`${today}T00:00:00`);
+  d.setDate(d.getDate() - 10);
+  return workdaysInRange(dayStr(d.getTime()), today).filter((ds) => ds < today && !store[ds]);
+}
+
+const projNameOf = (cwd) => (cwd || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || cwd || "?";
+
+// 生成某工作日的日报（已有则覆盖；result 为 markdown）
+async function runReport(day) {
+  const cfg = loadConfig();
+  const model = cfg.reportModel || cfg.analysisModel || "stealth/ox-alpha";
+  const all = loadEntries(); // 已按 ts 倒序
+  const d0 = new Date(`${day}T00:00:00`).getTime();
+  const d1 = d0 + 86400000;
+  const dayEntries = all.filter((e) => e.ts >= d0 && e.ts < d1).sort((a, b) => a.ts - b.ts);
+  if (!dayEntries.length) throw new Error(`${day} 没有输入记录，无法生成日报`);
+
+  const fmt = (ts) => {
+    const d = new Date(ts);
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+  const lines = dayEntries
+    .map((e) => {
+      const text = e.text.length > 300 ? e.text.slice(0, 300) + "…" : e.text;
+      return `[${fmt(e.ts)}][${projNameOf(e.cwd)}]${e.kind === "skill" ? "(skill)" : ""} ${text.replace(/\n/g, " ⏎ ")}`;
+    })
+    .join("\n");
+  const projects = [...new Set(dayEntries.map((e) => projNameOf(e.cwd)))];
+  const wd = new Date(`${day}T00:00:00`);
+  const week = ["日", "一", "二", "三", "四", "五", "六"][wd.getDay()];
+
+  const prompt = `你是开发者的工作日报助手。以下是 ${day}（周${week}）当天，开发者通过 AI 编程助手 pi 的全部亲手输入（时间正序，共 ${dayEntries.length} 条，涉及 ${projects.length} 个项目）。这些只是用户输入，没有 AI 回复。请据此写出该工作日的简短日报。
+
+当天输入：
+${lines}
+
+请输出 markdown（中文），包含以下小节：
+## 昨日工作
+2-3 条要点，每条一行、以 **粗体要点** 开头，概括当天实际完成的工作；严格基于输入推断，不要编造未出现的细节；用词简短，适合日报。
+## 涉及项目
+${projects.map((p) => `- ${p}`).join("\n")}
+（给每个项目补一句当天状态，如：推进中 / 已收尾 / 调研中）
+## 待跟进
+（可选）明显悬而未决的事项或下一步线索；没有就省略此节。`;
+
+  const result = await callModel(prompt, model);
+  const store = loadReports();
+  store[day] = { ts: Date.now(), model, day, confirmed: false, inputCount: dayEntries.length, projects, result };
+  saveReports(store);
+  queueCommit();
+  return store[day];
+}
+
+// 工作日早上自动生成昨日日报；错过不补（页面提供手动补齐），避免隐藏消耗
+function startReportTimer() {
+  setInterval(async () => {
+    try {
+      const cfg = loadConfig();
+      const now = new Date();
+      if (now.getDay() === 0 || now.getDay() === 6) return; // 周末不自动生成
+      const [h, m] = (cfg.reportTime || "08:30").split(":").map(Number);
+      const cur = now.getHours() * 60 + now.getMinutes();
+      const target = (h || 8) * 60 + (m || 30);
+      if (cur < target) return; // 未到生成时刻
+      const targetDay = prevWorkday(dayStr(now.getTime()));
+      if (loadReports()[targetDay]) return; // 已生成过
+      console.log(`[pi-trail] 自动生成 ${targetDay} 的日报`);
+      await runReport(targetDay);
+      console.log(`[pi-trail] ${targetDay} 日报已生成`);
+    } catch (e) {
+      console.error("[pi-trail] 自动日报失败：", (e && e.message) || e);
+    }
+  }, 60000);
 }
 
 const server = createServer(async (req, res) => {
@@ -634,6 +765,8 @@ const server = createServer(async (req, res) => {
         if (b.autoSync != null) cfg.autoSync = !!b.autoSync;
         if (typeof b.branch === "string" && b.branch.trim()) cfg.branch = b.branch.trim();
         if (typeof b.analysisModel === "string" && b.analysisModel.trim()) cfg.analysisModel = b.analysisModel.trim();
+        if (typeof b.reportModel === "string" && b.reportModel.trim()) cfg.reportModel = b.reportModel.trim();
+        if (typeof b.reportTime === "string" && /^\d{1,2}:\d{2}$/.test(b.reportTime.trim())) cfg.reportTime = b.reportTime.trim();
         saveConfig(cfg);
         queueSync(1000);
         return json(res, 200, { ...cfg, lastSync });
@@ -663,6 +796,42 @@ const server = createServer(async (req, res) => {
       }
     }
 
+    // 日报：GET /api/reports → 全部日报 + 今日/最近工作日 + 缺失列表
+    if (req.method === "GET" && p === "/api/reports") {
+      const cfg = loadConfig();
+      const today = dayStr(Date.now());
+      return json(res, 200, {
+        reports: loadReports(),
+        model: cfg.reportModel || cfg.analysisModel || "stealth/ox-alpha",
+        reportTime: cfg.reportTime || "08:30",
+        today,
+        lastWorkday: prevWorkday(today),
+        missing: missingWorkdays(),
+      });
+    }
+
+    // 生成/重新生成日报：POST /api/report/generate { day? }（默认最近工作日）
+    if (req.method === "POST" && p === "/api/report/generate") {
+      const b = await readBody(req);
+      const day = (b && b.day) || prevWorkday(dayStr(Date.now()));
+      try {
+        return json(res, 200, await runReport(day));
+      } catch (e) {
+        return json(res, 500, { error: String((e && e.message) || e) });
+      }
+    }
+
+    // 确认日报：POST /api/report/confirm { day }
+    if (req.method === "POST" && p === "/api/report/confirm") {
+      const b = await readBody(req);
+      const store = loadReports();
+      if (!b || !store[b.day]) return json(res, 404, { error: "report not found" });
+      store[b.day].confirmed = true;
+      saveReports(store);
+      queueCommit();
+      return json(res, 200, store[b.day]);
+    }
+
     if (req.method === "GET" && p === "/api/ping") {
       return json(res, 200, { ok: true });
     }
@@ -682,6 +851,7 @@ server.listen(PORT, "0.0.0.0", () => {
     }
   }
   console.log(`[pi-trail] store: ${ENTRIES_FILE}`);
+  startReportTimer(); // 工作日早上自动生成昨日日报
   (async () => {
     await detectRepo();
     if (migrateOldMeta()) queueCommit(0);
