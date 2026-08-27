@@ -25,6 +25,7 @@ You talk to your coding agent dozens of times a day across many projects — the
 - 🔁 **Git-backed, multi-host sync** — data lives in its own git repo (`~/.pi/trail`). Point it at any remote and multiple machines append, rebase onto each other and push automatically. Append-only JSONL + `merge=union` means concurrent appends never conflict.
 - 📌 **Memos & reminders** — pin any input as a memo, set due-date reminders; annotations are append-only events, so they sync safely too.
 - 🤖 **AI project analysis** — one click per project: an LLM reads the project's full input history and reports its current stage, ongoing work, timeline and likely next steps. Strictly manual — no hidden API calls. Uses your existing OpenRouter key from pi's `auth.json`.
+- 📋 **Daily reports** — every workday morning the server auto-analyzes the **previous workday** (Monday covers last Friday) and writes a short 2-3 point daily report; unconfirmed cards with badge reminders, missed days can be backfilled in one click, and results sync with the data repo via git.
 - 🛡 **Local-first** — no telemetry, no cloud. The web UI binds to your LAN (configurable), data never leaves your machine unless *you* configure a git remote.
 - 🔌 **Zero-config server** — the extension auto-spawns and supervises a dependency-free Node server. It self-heals; you never manage a process.
 
@@ -74,13 +75,22 @@ Each machine records locally; the server fetches, **rebases local commits onto `
 
 The 📊 view lists every project with its input volume and time range. Press **🤖 分析** — the model (default `stealth/ox-alpha`, changeable in ⚙) receives the project's input history and returns stage / ongoing work / timeline / next steps. Results are cached in `analysis.json` and versioned in the data repo. Analysis only ever runs on your explicit click.
 
+## Daily reports
+
+The 📋 *Reports* tab turns every workday into a short report automatically (**2-3 key points + involved projects + follow-ups**):
+
+- **Auto-generate** — while the server is running, at `08:30` on workdays (default; changeable via `reportTime` in ⚙ or `config.json`) it analyzes the **previous workday's** inputs (Monday → last Friday) and writes the report.
+- **Confirm** — a fresh report is marked *unconfirmed* (tab badge shows the count); press **✓ 确认** to archive it, **🔄 重新生成** to re-run any day.
+- **Backfill** — workdays you missed (machine was off, etc.) are listed at the top of the tab; **一键补齐** generates them one by one. You can also press **⚡ 生成昨日日报** manually.
+- **Model** — follows the analysis model by default; override with `reportModel` in ⚙. Reports are stored in `reports.json` (`~/.pi/trail/reports.json`) and versioned in the data repo.
+
 ## Configuration
 
 | Env / File | Default | Meaning |
 |---|---|---|
 | `PI_TRAIL_PORT` | `7799` | Web UI port |
 | `PI_TRAIL_STORE` | `~/.pi/trail` | Data directory (also used for demo/testing) |
-| `~/.pi/trail/config.json` | — | remote / branch / syncIntervalSec / autoSync / analysisModel |
+| `~/.pi/trail/config.json` | — | remote / branch / syncIntervalSec / autoSync / analysisModel / reportModel / reportTime |
 
 Upgrading from the pre-release `~/.pi/input-log`? The data directory is migrated automatically on first start.
 
