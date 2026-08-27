@@ -24,8 +24,9 @@ You talk to your coding agent dozens of times a day across many projects — the
 - 🖥 **Multi-machine aware** — every entry carries a machine GUID + hostname; machines with duplicate hostnames never collide.
 - 🔁 **Git-backed, multi-host sync** — data lives in its own git repo (`~/.pi/trail`). Point it at any remote and multiple machines append, rebase onto each other and push automatically. Append-only JSONL + `merge=union` means concurrent appends never conflict.
 - 📌 **Memos & reminders** — pin any input as a memo, set due-date reminders; annotations are append-only events, so they sync safely too.
-- 🤖 **AI project analysis** — one click per project: an LLM reads the project's full input history and reports its current stage, ongoing work, timeline and likely next steps. Strictly manual — no hidden API calls. Uses your existing OpenRouter key from pi's `auth.json`.
+- 🤖 **AI project analysis** — one click per project: an LLM reads the project's full input history and reports its current stage, ongoing work, timeline and likely next steps. Strictly manual — no hidden API calls.
 - 📋 **Daily reports** — every workday morning the server auto-analyzes the **previous workday** (Monday covers last Friday) and writes a short 2-3 point daily report; unconfirmed cards with badge reminders, missed days can be backfilled in one click, and results sync with the data repo via git.
+- 🧠 **Reuses pi's model stack** — analysis and reports resolve models straight from pi's `models.json`/`auth.json` (any provider, e.g. `thriking-v1/deepseek-v4-flash`); pick from a dropdown in ⚙ or the 🤖 tab instead of typing. Config is read live on every call — nothing is written to disk, no key copies.
 - 🛡 **Local-first** — no telemetry, no cloud. The web UI binds to your LAN (configurable), data never leaves your machine unless *you* configure a git remote.
 - 🔌 **Zero-config server** — the extension auto-spawns and supervises a dependency-free Node server. It self-heals; you never manage a process.
 
@@ -71,18 +72,26 @@ Set a remote once — in the web UI (⚙) or `~/.pi/trail/config.json`:
 
 Each machine records locally; the server fetches, **rebases local commits onto `origin/main`** and pushes, retrying on races. Unrelated histories from fresh machines are adopted automatically. Auth is your normal git credentials (SSH / credential manager).
 
-## AI analysis
+## AI workspace (🤖 AI tab)
 
-The 📊 view lists every project with its input volume and time range. Press **🤖 分析** — the model (default `stealth/ox-alpha`, changeable in ⚙) receives the project's input history and returns stage / ongoing work / timeline / next steps. Results are cached in `analysis.json` and versioned in the data repo. Analysis only ever runs on your explicit click.
+Analysis and daily reports live together in the **🤖 AI** tab: daily reports on top, project analysis below.
 
-## Daily reports
+### Project analysis
 
-The 📋 *Reports* tab turns every workday into a short report automatically (**2-3 key points + involved projects + follow-ups**):
+Every project is listed with its input volume and time range. Press **🤖 分析** — the model reads the project's input history and returns stage / ongoing work / timeline / next steps. Results are cached in `analysis.json` and versioned in the data repo. Analysis only ever runs on your explicit click.
+
+### Daily reports
+
+Every workday turns into a short report automatically (**2-3 key points + involved projects + follow-ups**):
 
 - **Auto-generate** — while the server is running, at `08:30` on workdays (default; changeable via `reportTime` in ⚙ or `config.json`) it analyzes the **previous workday's** inputs (Monday → last Friday) and writes the report.
 - **Confirm** — a fresh report is marked *unconfirmed* (tab badge shows the count); press **✓ 确认** to archive it, **🔄 重新生成** to re-run any day.
 - **Backfill** — workdays you missed (machine was off, etc.) are listed at the top of the tab; **一键补齐** generates them one by one. You can also press **⚡ 生成昨日日报** manually.
-- **Model** — follows the analysis model by default; override with `reportModel` in ⚙. Reports are stored in `reports.json` (`~/.pi/trail/reports.json`) and versioned in the data repo.
+- **Storage** — reports live in `reports.json` (`~/.pi/trail/reports.json`) and are versioned in the data repo.
+
+### Models
+
+Analysis and reports **reuse pi's own model stack**: model names use the `providerId/modelId` form (e.g. `thriking-v1/deepseek-v4-flash`, `zai-lite/glm-5.3-flash`), and both ⚙ and the 🤖 tab provide a **dropdown** listing every model from `~/.pi/agent/models.json` — no manual typing. On each call the server **reads pi's `models.json` / `auth.json` live** to resolve baseUrl / API key / API flavor (auth priority matches pi: `auth.json` > env var > inline `models.json` key) — nothing is written to disk, no key copies. Three API flavors are supported (`openai-completions` / `openai-responses` / `anthropic-messages`); model names without `/` fall back to OpenRouter (backwards compatible).
 
 ## Configuration
 
