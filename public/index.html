@@ -61,8 +61,25 @@
     border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px;
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   }
+  .reportMissing button {
+    background: var(--panel2); border: 1px solid var(--accent2); color: var(--accent2);
+    border-radius: 5px; padding: 2px 10px; cursor: pointer; font-size: 12px;
+  }
+  .reportMissing button:hover { color: var(--text); border-color: var(--text); }
   .reportCard { margin-bottom: 10px; }
   .reportCard summary { color: var(--accent); }
+  /* AI 工作台卡片：按钮不用绝对定位（避免与 meta 长文本重叠），改为流式布局 */
+  .entry.aiCard .actions {
+    position: static; display: flex; gap: 8px; margin-top: 8px;
+  }
+  .entry.aiCard .actions button {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--dim);
+    border-radius: 5px; padding: 3px 12px; cursor: pointer; font-size: 12px;
+  }
+  .entry.aiCard .actions button:hover { color: var(--text); border-color: var(--dim); }
+  .entry.aiCard .actions button.on { color: var(--accent2); border-color: var(--accent2); }
+  .entry.aiCard .meta { flex-wrap: wrap; padding-right: 0; }
+  .entry.aiCard .meta > span { white-space: nowrap; }
   .fishWrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 4px 6px; margin-bottom: 8px; }
   .fishWrap svg { display: block; }
   .fishWrap .spine { stroke: var(--dim); stroke-width: 2; }
@@ -155,23 +172,25 @@
     <div class="hrow">
       <h1>pi trail</h1>
       <nav class="tabs">
-        <button data-tab="timeline" class="active">轨迹</button>
-        <button data-tab="memos">备忘录 <span class="badge" id="memoBadge"></span></button>
-        <button data-tab="reminders">提醒 <span class="badge" id="remindBadge"></span></button>
+        <button data-tab="timeline" class="active">🧭 轨迹</button>
+        <button data-tab="memos">📌 备忘录 <span class="badge" id="memoBadge"></span></button>
+        <button data-tab="reminders">⏰ 提醒 <span class="badge" id="remindBadge"></span></button>
         <button data-tab="ai">🤖 AI <span class="badge" id="reportBadge"></span></button>
       </nav>
       <span id="status"></span>
       <button id="settingsBtn" title="同步设置">⚙</button>
     </div>
     <div class="hrow">
+      <input id="search" type="search" placeholder="搜索输入内容…">
+      <select id="projectFilter"><option value="">全部项目</option></select>
+    </div>
+    <div class="hrow" id="viewToggleRow">
       <div class="viewToggle" id="viewToggle">
         <button data-view="conv">💬 对话</button>
         <button data-view="day">📅 按天</button>
         <button data-view="tree">🌲 树形</button>
         <button data-view="fish">🐟 鱼骨</button>
       </div>
-      <input id="search" type="search" placeholder="搜索输入内容…">
-      <select id="projectFilter"><option value="">全部项目</option></select>
     </div>
   </div>
 </header>
@@ -613,13 +632,13 @@ function renderAI() {
 
   // 最近工作日状态条
   if (lw) {
-    html += `<div class="entry projCard reportToday ${has && !has.confirmed ? "unconfirmed" : ""}">
+    html += `<div class="entry projCard aiCard reportToday ${has && !has.confirmed ? "unconfirmed" : ""}">
       <div class="meta">
         <span>${isWd ? `今日周${wd}` : "今天周末"}</span>
         <span>最近工作日：<b>${lw}</b></span>
         <span>${has ? `日报已生成（${has.inputCount} 条输入）${has.confirmed ? " · ✓ 已确认" : " · 待确认"}` : "日报未生成"}</span>
       </div>
-      <div class="actions" style="display:flex">
+      <div class="actions">
         ${has ? (has.confirmed ? `<button class="reportRegen" data-day="${lw}">🔄 重新生成</button>` : `<button class="reportConfirm" data-day="${lw}">✓ 确认</button><button class="reportRegen" data-day="${lw}">🔄 重新生成</button>`) : `<button class="reportGen" data-day="${lw}">⚡ 生成昨日日报</button>`}
       </div>
     </div>`;
@@ -638,7 +657,7 @@ function renderAI() {
   for (const d of days) {
     const rep = r.reports[d];
     const dw = ["日", "一", "二", "三", "四", "五", "六"][new Date(`${d}T00:00:00`).getDay()];
-    html += `<div class="entry projCard reportCard ${rep.confirmed ? "" : "unconfirmed"}" data-day="${d}">
+    html += `<div class="entry projCard aiCard reportCard ${rep.confirmed ? "" : "unconfirmed"}" data-day="${d}">
       <div class="meta">
         <span class="proj">📋 ${d} 周${dw}</span>
         <span>${rep.inputCount} 条输入</span>
@@ -647,7 +666,7 @@ function renderAI() {
         <span>生成于 ${fmtDate(rep.ts)} ${fmtTime(rep.ts)}</span>
         ${rep.confirmed ? `<span style="color:var(--ok)">✓ 已确认</span>` : `<span style="color:var(--danger)">待确认</span>`}
       </div>
-      <div class="actions" style="display:flex">
+      <div class="actions">
         <button class="reportConfirm" data-day="${d}">✓ 确认</button>
         <button class="reportRegen" data-day="${d}">🔄 重新生成</button>
       </div>
@@ -667,7 +686,7 @@ function renderAI() {
   for (const [cwd, items] of arr) {
     const ar = state.analysis?.results?.[cwd];
     const newest = items[0], oldest = items[items.length - 1];
-    html += `<div class="entry projCard" data-proj="${esc(cwd)}">
+    html += `<div class="entry projCard aiCard" data-proj="${esc(cwd)}">
       <div class="meta">
         <span class="proj" style="font-size:14px">📁 ${esc(projName(cwd))}</span>
         <span title="${esc(cwd)}">${esc(cwd)}</span>
@@ -675,7 +694,7 @@ function renderAI() {
         <span>${fmtDate(oldest.ts)} ~ ${fmtDate(newest.ts)}</span>
         ${ar ? `<span>上次分析 ${fmtDate(ar.ts)} ${fmtTime(ar.ts)}</span>` : "<span style='opacity:.6'>未分析</span>"}
       </div>
-      <div class="actions" style="display:flex">
+      <div class="actions">
         <button class="analyzeBtn ${ar ? "on" : ""}" data-id="${esc(cwd)}">${ar ? "🤖 重新分析" : "🤖 分析"}</button>
       </div>
       ${ar ? `<details class="analysisResult" ${state.openResults.has(cwd) ? "open" : ""}><summary>查看分析结果（${ar.inputCount} 条输入 · ${esc(ar.model)}）</summary><div class="analysisMd">${mdToHtml(ar.result)}</div></details>` : ""}
@@ -758,8 +777,8 @@ function render() {
 // ---------- 事件 ----------
 
 function syncHeader() {
-  // 视图切换只属于轨迹 tab；其他 tab 不显示
-  $("#viewToggle").style.display = state.tab === "timeline" ? "flex" : "none";
+  // 视图切换只属于轨迹 tab（第三行）；其他 tab 隐藏整行，保持搜索/项目下拉行统一
+  $("#viewToggleRow").style.display = state.tab === "timeline" ? "flex" : "none";
 }
 
 document.querySelectorAll(".tabs button").forEach((b) =>
