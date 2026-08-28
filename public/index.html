@@ -270,9 +270,11 @@ async function refresh() {
     $("#status").textContent = `共 ${e.items.length} 条 · 更新于 ${fmtTime(Date.now())}`;
     if (state.tab === "timeline" && state.view === "fish") {
       if (!fishRendered) render();
-    } else if (state.tab === "ai" && !reportsRendered) {
-      await ensureAnalysisData();
-      render();
+    } else if (state.tab === "ai") {
+      if (!reportsRendered) {
+        await ensureAnalysisData();
+        render();
+      }
     } else {
       render();
     }
