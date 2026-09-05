@@ -1,0 +1,35 @@
+{
+  "description": "pi-trail zcode 适配 — 把下面的 hooks 块合并进 ~/.zcode/cli/config.json（用户级；项目级 hooks 会被 zcode 忽略）",
+  "hooks": {
+    "enabled": true,
+    "timeoutMs": 60000,
+    "maxOutputBytes": 32768,
+    "events": {
+      "UserPromptSubmit": [
+        {
+          "hooks": [
+            {
+              "type": "process",
+              "command": "node",
+              "args": ["<pi-trail 绝对路径>/recorder.mjs", "--agent", "zcode"],
+              "timeoutMs": 10000
+            }
+          ]
+        }
+      ],
+      "SessionStart": [
+        {
+          "matcher": "startup|resume|clear",
+          "hooks": [
+            {
+              "type": "process",
+              "command": "node",
+              "args": ["<pi-trail 绝对路径>/recorder.mjs", "--agent", "zcode", "--ensure-server"],
+              "timeoutMs": 10000
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -10,6 +10,8 @@
 
 pi trail is a [pi](https://github.com/earendil-works/pi-coding-agent) package that quietly records **every input you type** into the AI coding assistant — and only yours: subagent briefs, API calls and extension-injected messages are filtered out. Everything lands in a local git repo and is served to a beautiful web UI where your work history organizes itself into conversations, projects, memos and reminders. An optional AI analysis reads your trail and tells you where each project actually stands.
 
+It is not pi-only: through a universal recorder, **inputs from zcode, Claude Code and any other agent flow into the same trail** (see [Other agents](#other-agents-zcodeclaude-code--)), badged with ⚡ in the web UI.
+
 ![conversations view](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-conversations.png)
 
 ## Why
@@ -44,6 +46,63 @@ pi install git:github.com/Naoki326/pi-trail
 
 Then restart pi (or `/reload`) and open **http://localhost:7799** — your first inputs appear within seconds. Recording starts at install time; entries are never back-dated.
 
+## Other agents (zcode / Claude Code / …)
+
+All agents share the same trail repo (`~/.pi/trail`) and the same viewer; entries carry an ⚡ badge per source, and AI analysis & daily reports cover every agent together.
+
+### zcode
+
+zcode integrates via [hooks](https://zcode.z.ai/cn/docs/hooks). Merge the `hooks` block from [`adapters/zcode/hooks.json`](adapters/zcode/hooks.json) into your **user-level** `~/.zcode/cli/config.json` (keep `hooks.enabled: true`; project-level hooks are currently ignored by zcode entirely) and point `<pi-trail path>` at your checkout:
+
+```json
+"hooks": {
+  "enabled": true,
+  "events": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "process", "command": "node",
+        "args": ["C:/path/to/pi-trail/recorder.mjs", "--agent", "zcode"], "timeoutMs": 10000 } ] }
+    ],
+    "SessionStart": [
+      { "matcher": "startup|resume|clear",
+        "hooks": [ { "type": "process", "command": "node",
+        "args": ["C:/path/to/pi-trail/recorder.mjs", "--agent", "zcode", "--ensure-server"], "timeoutMs": 10000 } ] }
+    ]
+  }
+}
+```
+
+- Hook config is **snapshotted at session start** — start a new session after editing.
+- Known limitation: the desktop's built-in agent was reported not to fire config hooks ([zai-org/feedback#32](https://github.com/zai-org/feedback/issues/32), P2, tracked); CLI sessions are unaffected.
+
+### Claude Code
+
+Merge the `hooks` block from [`adapters/claude-code/settings.json`](adapters/claude-code/settings.json) into `~/.claude/settings.json`:
+
+```json
+"hooks": {
+  "UserPromptSubmit": [
+    { "hooks": [ { "type": "command",
+      "command": "node /path/to/pi-trail/recorder.mjs --agent claude-code" } ] }
+  ]
+}
+```
+
+### Any other agent
+
+Anything that can run a command or make an HTTP request can join in:
+
+```bash
+# Option 1: the universal recorder (reads hook JSON from stdin: prompt / cwd / session_id)
+echo '{"prompt":"hello","cwd":"/dev/acme"}' | node /path/to/pi-trail/recorder.mjs --agent myagent
+
+# Option 2: POST straight to the viewer service
+curl -X POST http://localhost:7799/api/record \
+  -H "Content-Type: application/json" \
+  -d '{"text":"hello","cwd":"/dev/acme","agent":"myagent"}'
+```
+
+The recorder applies the same rules as the pi extension: empty input is skipped; slash commands are recorded as skills (except common built-ins like `/clear`, `/compact`); if the service is down it is spawned automatically, and if that fails the recorder falls back to a direct file append — it never breaks the host agent.
+
 ## The data
 
 One JSON line per input, in `~/.pi/trail/entries.jsonl`:
@@ -57,7 +116,8 @@ One JSON line per input, in `~/.pi/trail/entries.jsonl`:
 | `id` | Unique, machine-prefixed (no cross-host collisions) |
 | `ts` / `host` / `machineId` | When, which machine |
 | `cwd` / `sessionId` / `sessionName` | Which project, which conversation |
-| `source` | `interactive` (TUI) / `rpc` (pi-web) / `backfill` |
+| `agent` | Source agent: `pi` / `zcode` / `claude-code` / … (legacy rows without the field are pi) |
+| `source` | `interactive` (TUI) / `rpc` (pi-web) / `hook` (other agents) / `backfill` |
 | `kind` | `input` or `skill` |
 
 Annotations (memos, reminders, soft-deletes) are append-only events in `meta.jsonl`, replayed by timestamp — safe under union merges.

@@ -332,6 +332,7 @@ function entryHtml(e, showDone, showDate) {
   const isSkill = e.kind === "skill" || /^\/skill:/i.test(e.text || "");
   const tags =
     (isSkill ? `<span class="tag memo" style="background:rgba(77,163,255,.15);color:var(--accent)">📖 skill</span>` : "") +
+    (e.agent && e.agent !== "pi" ? `<span class="tag" style="background:rgba(77,163,255,.12);color:var(--accent)" title="来自 ${esc(e.agent)}">⚡ ${esc(e.agent)}</span>` : "") +
     (multiHost ? `<span title="${esc(e.machineId || "")}">🖥 ${esc(e.host || machineOf(e))}</span>` : "") +
     (e.sessionId ? `<span title="session ${esc(e.sessionId)}" style="cursor:default">#${esc(String(e.sessionId).slice(0, 8))}</span>` : "") +
     (memo ? `<span class="tag memo">备忘</span>` : "") +
@@ -728,7 +729,7 @@ function render() {
     return;
   }
   if (state.tab === "timeline") {
-    if (!list.length) { main.innerHTML = `<div class="empty">暂无记录 — 在 pi 里随便输入点什么，几秒后这里就会出现</div>`; return; }
+    if (!list.length) { main.innerHTML = `<div class="empty">暂无记录 — 在 pi / zcode 等任意已接入的 agent 里随便输入点什么，几秒后这里就会出现</div>`; return; }
     if (state.view === "conv") {
       main.innerHTML = renderConv(list);
       return;

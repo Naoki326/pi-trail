@@ -1,0 +1,15 @@
+{
+  "description": "pi-trail claude-code 适配 — 把下面的 hooks 块合并进 ~/.claude/settings.json",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node <pi-trail 绝对路径>/recorder.mjs --agent claude-code"
+          }
+        ]
+      }
+    ]
+  }
+}

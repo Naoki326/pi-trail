@@ -218,6 +218,7 @@ export default function (pi: ExtensionAPI) {
           cwd: ctx.cwd,
           sessionId: ctx.sessionManager?.getSessionId?.() ?? undefined,
           sessionName,
+          agent: "pi",
           source: event.source ?? "interactive",
           kind: isSkill ? "skill" : "input",
           text,

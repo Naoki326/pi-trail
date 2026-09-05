@@ -20,6 +20,7 @@ import { homedir, hostname, networkInterfaces } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile, execFileSync } from "node:child_process";
+import { buildEntry, classifyInput, getMachineId as getLocalMachineId } from "./agent-core.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STORE_DIR = process.env.PI_TRAIL_STORE || join(homedir(), ".pi", "trail");
@@ -130,9 +131,13 @@ function migrateOldMeta() {
 
 // ---------- 会话标题解析与子代理过滤 ----------
 // 子代理会话：文件头 parentSession + 名字「类型#哈希」；读取端过滤兑底（旧版扩展/别机写入）
+// 注意：会话文件索引只覆盖 pi（~/.pi/agent/sessions）；其他 agent（zcode 等）的条目
+// 带 agent 字段，sessionId 天然不在索引里，必须跳过「无会话文件=内存子代理」的推断。
 
 const SESSIONS_DIR = join(homedir(), ".pi", "agent", "sessions");
 const SUBAGENT_NAME_RE = /^[^#\s]+#[0-9a-f]+$/i;
+
+const isPiEntry = (e) => !e.agent || e.agent === "pi"; // 旧数据无 agent 字段，均出自 pi
 
 let sessionsIndex = null; // sessionId -> session 文件路径
 let sessionsIndexedAt = 0;
@@ -180,28 +185,6 @@ function sessionMeta(sid) {
   return meta;
 }
 
-function getLocalMachineId() {
-  try {
-    if (process.platform === "win32") {
-      const out = execFileSync("reg", ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"], { encoding: "utf8", windowsHide: true });
-      const m = out.match(/MachineGuid\s+REG_SZ\s+(\S+)/);
-      if (m) return m[1].trim();
-    } else if (process.platform === "darwin") {
-      const out = execFileSync("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"], { encoding: "utf8" });
-      const m = out.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/);
-      if (m) return m[1].trim();
-    } else {
-      for (const p of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
-        try {
-          const id = readFileSync(p, "utf8").trim();
-          if (id) return id;
-        } catch { /* 下一个 */ }
-      }
-    }
-  } catch { /* 兜底走主机名 */ }
-  return hostname();
-}
-
 const LOCAL_MACHINE_ID = getLocalMachineId();
 
 function loadEntries() {
@@ -215,10 +198,11 @@ function loadEntries() {
       try {
         const e = JSON.parse(s);
         if (e.source === "extension") continue; // 扩展注入不展示；rpc（pi-web）与 interactive（TUI）都是本人输入
-        const sm = sessionMeta(e.sessionId);
+        const pi = isPiEntry(e);
+        const sm = pi ? sessionMeta(e.sessionId) : null;
         if (sm?.subagent) continue; // 子代理会话（parentSession+类型#哈希）不展示
-        // 本机会话始终无 session 文件 = 内存子代理（旧版扩展写入的简报）；给新会话 2 分钟落盘宽限，远端机器不适用
-        if (e.sessionId && !sm && (!e.machineId || e.machineId === LOCAL_MACHINE_ID) && Date.now() - e.ts > 120000) continue;
+        // pi 本机会话始终无 session 文件 = 内存子代理（旧版扩展写入的简报）；给新会话 2 分钟落盘宽限，远端机器不适用
+        if (pi && e.sessionId && !sm && (!e.machineId || e.machineId === LOCAL_MACHINE_ID) && Date.now() - e.ts > 120000) continue;
         if (!e.sessionName && sm?.name && !sm.subagent) e.sessionName = sm.name; // 历史条目补标题
         if (meta.deleted[e.id]) continue;
         out.push(e);
@@ -644,11 +628,12 @@ async function runAnalysis(project) {
   const lines = capped
     .map((e) => {
       const text = e.text.length > 300 ? e.text.slice(0, 300) + "…" : e.text;
-      return `[${fmt(e.ts)}]${e.kind === "skill" ? "(skill)" : ""} ${text.replace(/\n/g, " ⏎ ")}`;
+      const tag = e.agent && e.agent !== "pi" ? `[${e.agent}]` : "";
+      return `[${fmt(e.ts)}]${tag}${e.kind === "skill" ? "(skill)" : ""} ${text.replace(/\n/g, " ⏎ ")}`;
     })
     .join("\n");
 
-  const prompt = `以下是一位开发者通过 AI 编程助手（pi）在同一个项目文件夹中的全部历史输入（时间正序）。这些只是用户输入，没有 AI 回复。请据此推断该项目的当前进展。
+  const prompt = `以下是一位开发者通过 AI 编程助手（pi、zcode 等多个助手）在同一个项目文件夹中的全部历史输入（时间正序）。这些只是用户输入，没有 AI 回复。请据此推断该项目的当前进展。
 
 项目目录：${project}
 输入时间范围：${new Date(sorted[0].ts).toLocaleString("zh-CN")} ~ ${new Date(sorted[sorted.length - 1].ts).toLocaleString("zh-CN")}（共 ${sorted.length} 条${sorted.length > 400 ? "，仅提供最近 400 条" : ""}）
@@ -748,14 +733,15 @@ async function runReport(day) {
   const lines = dayEntries
     .map((e) => {
       const text = e.text.length > 300 ? e.text.slice(0, 300) + "…" : e.text;
-      return `[${fmt(e.ts)}][${projNameOf(e.cwd)}]${e.kind === "skill" ? "(skill)" : ""} ${text.replace(/\n/g, " ⏎ ")}`;
+      const tag = e.agent && e.agent !== "pi" ? `[${e.agent}]` : "";
+      return `[${fmt(e.ts)}][${projNameOf(e.cwd)}]${tag}${e.kind === "skill" ? "(skill)" : ""} ${text.replace(/\n/g, " ⏎ ")}`;
     })
     .join("\n");
   const projects = [...new Set(dayEntries.map((e) => projNameOf(e.cwd)))];
   const wd = new Date(`${day}T00:00:00`);
   const week = ["日", "一", "二", "三", "四", "五", "六"][wd.getDay()];
 
-  const prompt = `你是开发者的工作日报助手。以下是 ${day}（周${week}）当天，开发者通过 AI 编程助手 pi 的全部亲手输入（时间正序，共 ${dayEntries.length} 条，涉及 ${projects.length} 个项目）。这些只是用户输入，没有 AI 回复。请据此写出该工作日的简短日报。
+  const prompt = `你是开发者的工作日报助手。以下是 ${day}（周${week}）当天，开发者通过 AI 编程助手（pi、zcode 等）的全部亲手输入（时间正序，共 ${dayEntries.length} 条，涉及 ${projects.length} 个项目）。这些只是用户输入，没有 AI 回复。请据此写出该工作日的简短日报。
 
 当天输入：
 ${lines}
@@ -815,6 +801,32 @@ const server = createServer(async (req, res) => {
       const all = loadEntries();
       const items = since ? all.filter((e) => e.ts > since) : all;
       return json(res, 200, { items, latest: all[0]?.ts ?? 0 });
+    }
+
+    // 跨 agent 记录端点：POST /api/record { text, cwd?, sessionId?, sessionName?, agent?, kind? }
+    // 由 recorder.mjs（各 agent hook）或其他工具调用；过滤规则与 pi 扩展一致
+    if (req.method === "POST" && p === "/api/record") {
+      const b = await readBody(req);
+      const text = String(b.text || b.prompt || "");
+      const cls = classifyInput(text, b.agent);
+      if (!cls.record) return json(res, 200, { ok: false, skipped: text.trim() ? "slash-command" : "empty" });
+      if (String(b.source || "") === "extension") return json(res, 200, { ok: false, skipped: "extension" });
+      const entry = buildEntry({
+        text: text.trim(),
+        cwd: b.cwd,
+        sessionId: b.sessionId || b.session_id,
+        sessionName: b.sessionName || b.session_name,
+        agent: b.agent,
+        source: b.source || "hook",
+        kind: b.kind === "skill" ? "skill" : cls.kind,
+      });
+      try {
+        appendFileSync(ENTRIES_FILE, JSON.stringify(entry) + "\n", "utf8");
+      } catch (e) {
+        return json(res, 500, { error: String((e && e.message) || e) });
+      }
+      queueCommit();
+      return json(res, 200, { ok: true, id: entry.id });
     }
 
     if (req.method === "GET" && p === "/api/meta") {

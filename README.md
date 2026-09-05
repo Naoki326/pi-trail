@@ -11,6 +11,8 @@
 
 pi trail 是一个 [pi](https://github.com/earendil-works/pi-coding-agent) 插件：悄悄记录你**亲手输入**的每一条指令——只记你的，子代理任务简报、API 注入、扩展消息全部自动排除。数据落在本地 git 仓库，网页端把你的工作史自动组织成对话、项目、备忘录和提醒；可选的 AI 分析读取轨迹，告诉你每个项目实际进行到哪了。
 
+它不止支持 pi：通过通用记录器，**zcode、Claude Code 等任何 agent 的输入也能记入同一条轨迹**（见[接入其它 agent](#接入其它-agentzcodecla-code--)），网页里以 ⚡ 徽标区分来源。
+
 ![conversations view](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-conversations.png)
 
 ## 为什么需要
@@ -45,6 +47,63 @@ pi install git:github.com/Naoki326/pi-trail
 
 重启 pi（或 `/reload`），打开 **http://localhost:7799**——几秒后你的首批输入就会出现。记录从安装时刻开始，不回填历史。
 
+## 接入其它 agent（zcode / Claude Code / …）
+
+所有 agent 共用同一个轨迹仓库（`~/.pi/trail`）与同一个查看服务；网页里每条输入按来源带 ⚡ 徽标，AI 分析与日报会综合全部 agent 的输入。
+
+### zcode
+
+zcode 走 [hooks](https://zcode.z.ai/cn/docs/hooks) 机制。把 [`adapters/zcode/hooks.json`](adapters/zcode/hooks.json) 里的 `hooks` 块合并进 **用户级** `~/.zcode/cli/config.json`（`hooks.enabled: true` 必须保留；项目级 hooks 目前会被 zcode 整体忽略），并把 `<pi-trail 绝对路径>` 换成你的检出路径：
+
+```json
+"hooks": {
+  "enabled": true,
+  "events": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "process", "command": "node",
+        "args": ["C:/path/to/pi-trail/recorder.mjs", "--agent", "zcode"], "timeoutMs": 10000 } ] }
+    ],
+    "SessionStart": [
+      { "matcher": "startup|resume|clear",
+        "hooks": [ { "type": "process", "command": "node",
+        "args": ["C:/path/to/pi-trail/recorder.mjs", "--agent", "zcode", "--ensure-server"], "timeoutMs": 10000 } ] }
+    ]
+  }
+}
+```
+
+- 钩子配置在**会话启动时快照**——改完配置请新建会话验证。
+- 已知限制：桌面端内置 agent 曾有钩子不触发的反馈（[zai-org/feedback#32](https://github.com/zai-org/feedback/issues/32)，P2 跟进中），CLI 会话不受影响。
+
+### Claude Code
+
+把 [`adapters/claude-code/settings.json`](adapters/claude-code/settings.json) 里的 `hooks` 块合并进 `~/.claude/settings.json`：
+
+```json
+"hooks": {
+  "UserPromptSubmit": [
+    { "hooks": [ { "type": "command",
+      "command": "node /path/to/pi-trail/recorder.mjs --agent claude-code" } ] }
+  ]
+}
+```
+
+### 其它 agent
+
+任何能执行命令或发 HTTP 请求的 agent 都能接入，两种方式任选：
+
+```bash
+# 方式一：通用记录器（stdin 收 hook JSON，字段 prompt / cwd / session_id）
+echo '{"prompt":"你好","cwd":"/dev/acme"}' | node /path/to/pi-trail/recorder.mjs --agent myagent
+
+# 方式二：直接 POST 查看服务
+curl -X POST http://localhost:7799/api/record \
+  -H "Content-Type: application/json" \
+  -d '{"text":"你好","cwd":"/dev/acme","agent":"myagent"}'
+```
+
+记录器的过滤规则与 pi 一致：空输入不记；斜杠命令记为 skill（`/clear`、`/compact` 等常见内置命令除外）；服务不可达时自动拉起，仍失败则本地直写兜底，绝不影响宿主 agent。
+
 ## 数据
 
 每条输入一行 JSON，存于 `~/.pi/trail/entries.jsonl`：
@@ -58,7 +117,8 @@ pi install git:github.com/Naoki326/pi-trail
 | `id` | 全局唯一，机器前缀防跨机碰撞 |
 | `ts` / `host` / `machineId` | 何时、哪台机器 |
 | `cwd` / `sessionId` / `sessionName` | 哪个项目、哪场对话 |
-| `source` | `interactive`（TUI）/ `rpc`（pi-web）/ `backfill`（回填） |
+| `agent` | 来源 agent：`pi` / `zcode` / `claude-code` / …（旧数据无此字段即 pi） |
+| `source` | `interactive`（TUI）/ `rpc`（pi-web）/ `hook`（其它 agent 钩子）/ `backfill`（回填） |
 | `kind` | `input` 或 `skill` |
 
 标注（备忘、提醒、软删除）是 `meta.jsonl` 里的追加式事件，按时间戳重放——union 合并下天然安全。
