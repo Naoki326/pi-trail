@@ -21,20 +21,22 @@ You talk to your coding agent dozens of times a day across many projects — the
 ## Features
 
 - 📝 **Captures your inputs only** — typed in TUI or pi-web. Skill invocations (`/skill:name`) are recorded as one line, never the expanded prompt body. Subagent sessions (in-memory or persisted with `type#hash` names) and extension-injected messages are excluded on both write and read paths.
-- 🧭 **Five timeline views** — 💬 *Conversations* (flat, titled by session name or first input), 📅 *By day*, 🌲 *Tree* (machine → project → conversation), 🐟 *Fishbone*, 📊 *Analysis*.
+- 🧭 **Four timeline views** — 💬 *Conversations* (titled by session name or first input), 📅 *By day*, 🌲 *Tree* (machine → project → conversation), 🐟 *Fishbone*; switch from the toggle at the top of the content area, and your choice is remembered.
 - 🐟 **Fishbone timeline** — one spine per project folder, one bone per conversation, **evenly spaced in chronological order** (ordinal scale: exact times live on each bone's label, day boundaries are drawn as dashed separators, and the view opens scrolled to the newest end); every conversation gets a stable color shared by its bone, label, and expanded panel. Bone thickness and the label suffix encode input count. Click a bone to expand it: small spurs on the spine mark each input of that conversation (hover for time and content). Collapsible and keyboard-accessible.
 - 🖥 **Multi-machine aware** — every entry carries a machine GUID + hostname; machines with duplicate hostnames never collide.
 - 🔁 **Git-backed, multi-host sync** — data lives in its own git repo (`~/.pi/trail`). Point it at any remote and multiple machines append, rebase onto each other and push automatically. Append-only JSONL + `merge=union` means concurrent appends never conflict.
-- 📌 **Memos & reminders** — pin any input as a memo, set due-date reminders; annotations are append-only events, so they sync safely too.
+- 📅 **Calendar: memos + reminders** — a month view that places every memo and reminder on its day: pin any conversation input as a memo (plotted on its input day) or give it a due reminder (plotted on the due day, overdue highlighted in red); you can also **create memos/reminders by hand**, unrelated to any conversation, optionally tied to a project (leave empty for global). Cells show compact thumbnails only — click a day to see full entries and act on them below. Reminders offer one-click quick times (+1h / tonight / tomorrow morning / next Monday…) plus a custom date-time dialog.
 - 🤖 **AI project analysis** — one click per project: an LLM reads the project's full input history and reports its current stage, ongoing work, timeline and likely next steps. Strictly manual — no hidden API calls.
 - 📋 **Daily reports** — every workday morning the server auto-analyzes the **previous workday** (Monday covers last Friday) and writes a short 2-3 point daily report; unconfirmed cards with badge reminders, missed days can be backfilled in one click, and results sync with the data repo via git.
-- 🧠 **Reuses pi's model stack** — analysis and reports resolve models straight from pi's `models.json`/`auth.json` (any provider, e.g. `thriking-v1/deepseek-v4-flash`); pick from a dropdown in ⚙ or the 🤖 tab instead of typing. Config is read live on every call — nothing is written to disk, no key copies.
+- 🧠 **Reuses pi's model stack** — analysis and reports resolve models straight from pi's `models.json`/`auth.json` (any provider, e.g. `thriking-v1/deepseek-v4-flash`); pick from a dropdown in ⚙ instead of typing. Config is read live on every call — nothing is written to disk, no key copies.
 - 🛡 **Local-first** — no telemetry, no cloud. The web UI binds to your LAN (configurable), data never leaves your machine unless *you* configure a git remote.
 - 🔌 **Zero-config server** — the extension auto-spawns and supervises a dependency-free Node server. It self-heals; you never manage a process.
 
 ![tree view](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-tree.png)
 
 ![fishbone view](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-fishbone.png)
+
+![calendar view](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-calendar.png)
 
 ## Install
 
@@ -120,7 +122,7 @@ One JSON line per input, in `~/.pi/trail/entries.jsonl`:
 | `source` | `interactive` (TUI) / `rpc` (pi-web) / `hook` (other agents) / `backfill` |
 | `kind` | `input` or `skill` |
 
-Annotations (memos, reminders, soft-deletes) are append-only events in `meta.jsonl`, replayed by timestamp — safe under union merges.
+Annotations (memos, reminders, soft-deletes) and hand-created memo/reminder items are append-only events in `meta.jsonl`, replayed by timestamp — safe under union merges.
 
 ## Multi-machine sync
 
@@ -134,7 +136,9 @@ Each machine records locally; the server fetches, **rebases local commits onto `
 
 ## AI workspace (🤖 AI tab)
 
-Analysis and daily reports live together in the **🤖 AI** tab: daily reports on top, project analysis below.
+Analysis and daily reports live inside the **🤖 AI** tab, switched via a sub-tab toggle at the top of the content area (📋 *Reports* / 📊 *Project analysis*); your choice is remembered.
+
+![ai workspace](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-ai.png)
 
 ### Project analysis
 

@@ -135,16 +135,39 @@
   .tag.remind { background: rgba(255,107,107,.15); color: var(--danger); }
   .tag.done { background: rgba(77,220,122,.15); color: var(--ok); }
   .entry.done .text { opacity: .45; text-decoration: line-through; }
-  .remind-row { margin-top: 6px; display: none; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); }
-  .remind-row.open { display: flex; }
-  .remind-row input[type=datetime-local] {
+  .quickBtn {
     background: var(--panel2); border: 1px solid var(--border); color: var(--text);
-    border-radius: 5px; padding: 2px 6px; font-size: 12px;
+    border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 13px;
   }
-  .remind-row button {
-    background: var(--panel2); border: 1px solid var(--border); color: var(--text);
-    border-radius: 5px; padding: 2px 10px; cursor: pointer; font-size: 12px;
-  }
+  .quickBtn:hover { border-color: var(--accent); color: var(--accent); }
+  /* 日历视图（备忘 + 提醒）：备忘按输入日落格（橙），提醒按到期日落格（红，到期红底） */
+  .calBar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .calBar b { font-size: 15px; }
+  .calNav { background: var(--panel2); border: 1px solid var(--border); color: var(--dim); border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: 13px; }
+  .calNav:hover { color: var(--text); border-color: var(--dim); }
+  .calLegend { font-size: 12px; color: var(--dim); margin-left: auto; }
+  .calGrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .calHead { text-align: center; color: var(--dim); font-size: 12px; padding: 2px 0 4px; }
+  .calCell { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; height: 106px; padding: 4px 5px; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+  .calCell.blank { background: none; border-color: transparent; }
+  .calCell.today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .calCell.open { border-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2); background: rgba(255,184,77,.07); }
+  .calCellHead { display: flex; align-items: center; gap: 6px; }
+  .calDayBtn { background: none; border: none; color: var(--dim); font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
+  .calDayBtn:hover { color: var(--text); }
+  .calCell.today .calDayBtn { color: var(--accent); font-weight: 700; }
+  .calCellHead .cnt { color: var(--accent2); font-size: 11px; }
+  .calEv { flex: none; display: block; width: 100%; text-align: left; background: var(--panel2); border: none; border-left: 3px solid var(--accent2); border-radius: 4px; color: var(--dim); font: inherit; font-size: 11px; line-height: 1.5; padding: 1px 5px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .calEv:hover { color: var(--text); }
+  .calEv.remind { border-left-color: var(--danger); }
+  .calEv.due { background: rgba(255,107,107,.12); color: var(--danger); }
+  .calEv.done { opacity: .45; text-decoration: line-through; }
+  .calMore { border: none; background: none; color: var(--dim); font: inherit; font-size: 11px; text-align: left; cursor: pointer; padding: 0; }
+  .calMore:hover { color: var(--text); }
+  .calOpen { margin-top: 14px; }
+  .calOpenTitle { font-size: 13px; color: var(--dim); border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+  .calCloseDay { background: var(--panel2); border: 1px solid var(--border); color: var(--dim); border-radius: 5px; padding: 1px 8px; cursor: pointer; font-size: 12px; }
+  .calCloseDay:hover { color: var(--text); }
   .empty { color: var(--dim); text-align: center; padding: 60px 0; }
   #status { font-size: 12px; color: var(--dim); margin-left: auto; }
   #settingsBtn {
@@ -174,8 +197,7 @@
       <h1>pi trail</h1>
       <nav class="tabs">
         <button data-tab="timeline" class="active">🧭 轨迹</button>
-        <button data-tab="memos">📌 备忘录 <span class="badge" id="memoBadge"></span></button>
-        <button data-tab="reminders">⏰ 提醒 <span class="badge" id="remindBadge"></span></button>
+        <button data-tab="calendar">📅 日历 <span class="badge" id="calBadge"></span></button>
         <button data-tab="ai">🤖 AI <span class="badge" id="reportBadge"></span></button>
       </nav>
       <span id="status"></span>
@@ -195,6 +217,37 @@
   <div class="row">
     <button id="confirmCancel">取消</button>
     <button id="confirmOk" class="danger">删除</button>
+  </div>
+</dialog>
+
+<dialog id="remindDlg">
+  <h3>⏰ 设置提醒</h3>
+  <p id="remindText"></p>
+  <div id="remindQuick" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px"></div>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+    <input id="remindInput" type="datetime-local" style="flex:1;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:13px">
+    <button id="remindSaveCustom">保存自定义时间</button>
+  </div>
+  <div class="row">
+    <button id="remindClearBtn" class="danger">清除提醒</button>
+    <button id="remindCancel">关闭</button>
+  </div>
+</dialog>
+
+<dialog id="customDlg">
+  <h3 id="customDlgTitle">➕ 新建备忘 / 提醒</h3>
+  <div style="display:flex;flex-direction:column;gap:10px;margin:12px 0 16px">
+    <textarea id="customText" rows="3" placeholder="内容…" style="width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font:inherit;resize:vertical"></textarea>
+    <label>关联项目（留空 = 全局）
+      <select id="customProj" style="width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px"></select>
+    </label>
+    <label>提醒时间（留空 = 纯备忘）
+      <input id="customDue" type="datetime-local" style="width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px">
+    </label>
+  </div>
+  <div class="row">
+    <button id="customCancel">取消</button>
+    <button id="customSave">保存</button>
   </div>
 </dialog>
 
@@ -244,6 +297,9 @@ const state = {
   search: "",
   project: "",
   openResults: new Set(),
+  calMonth: null, // 日历当前显示的年月 {y, m}，null = 首次渲染取今天
+  calOpenDay: null, // 日历下方展开详情的日期 key（YYYY-MM-DD）
+  aiTab: null, // AI tab 内的子视图："report" | "proj"，null = 首次渲染取 localStorage
   reports: { reports: {}, model: "", reportTime: "08:30", today: "", lastWorkday: "", missing: [] },
 };
 
@@ -304,18 +360,19 @@ function visible() {
   });
 }
 
-function actionsHtml(e) {
+function actionsHtml(e, showMemoDone, opts = {}) {
   const memo = state.meta.memos[e.id];
   const remind = state.meta.reminders[e.id];
   return `
     <div class="actions">
+      ${showMemoDone && memo ? `<button class="memoDone" data-id="${e.id}">${memo.done ? "↩ 取消完成" : "✓ 完成"}</button>` : ""}
       <button class="memoBtn ${memo ? "on" : ""}" data-id="${e.id}" title="备忘录标记">📌${memo ? "已备忘" : "备忘"}</button>
       <button class="remindBtn ${remind ? "on" : ""}" data-id="${e.id}" title="设置提醒">⏰${remind ? "已提醒" : "提醒"}</button>
-      <button class="del" data-id="${e.id}" title="删除">✕</button>
+      ${opts.hideDel ? "" : `<button class="del" data-id="${e.id}" title="删除">✕</button>`}
     </div>`;
 }
 
-function entryHtml(e, showDone, showDate) {
+function entryHtml(e, showDone, showDate, showMemoDone, opts = {}) {
   const memo = state.meta.memos[e.id];
   const remind = state.meta.reminders[e.id];
   const isDue = remind && remind.due <= Date.now();
@@ -340,13 +397,7 @@ function entryHtml(e, showDone, showDate) {
         <span>${tags}</span>
       </div>
       <div class="text">${esc(e.text)}</div>
-      <div class="remind-row" data-id="${e.id}">
-        <label>提醒时间</label>
-        <input type="datetime-local" value="${remind ? toLocalInput(remind.due) : ""}">
-        <button class="remindSave">保存</button>
-        <button class="remindClear">清除</button>
-      </div>
-      ${actionsHtml(e)}
+      ${actionsHtml(e, showMemoDone, opts)}
     </div>`;
 }
 
@@ -617,6 +668,118 @@ function viewToggleHtml() {
     `<button data-view="${v}" class="${state.view === v ? "active" : ""}">${label}</button>`).join("")}</div>`;
 }
 
+// ---------- 日历视图（备忘 + 提醒，月历） ----------
+
+// 备忘按输入日落格（它钉住的是那天的输入），提醒按到期日落格（要那天才看）；
+// 同一条目既有备忘又有提醒时在两个日期各出现一次。
+// 手动添加的条目（meta.custom，与对话无关）：有提醒时间落到期日，否则落创建日
+function calEventsByDay() {
+  const q = state.search.trim().toLowerCase();
+  const byDay = new Map(); // dateKey -> [{e, memo, remind, kind, custom?}]
+  const push = (key, item) => { if (!byDay.has(key)) byDay.set(key, []); byDay.get(key).push(item); };
+  for (const e of visible()) {
+    const memo = state.meta.memos[e.id];
+    const remind = state.meta.reminders[e.id];
+    if (memo) push(fmtDate(e.ts), { e, memo, remind, kind: "memo" });
+    if (remind) push(fmtDate(remind.due), { e, memo, remind, kind: "remind" });
+  }
+  for (const c of Object.values(state.meta.custom || {})) {
+    if (q && !c.text.toLowerCase().includes(q)) continue;
+    // 全局条目（无项目）不受项目筛选影响；关联了项目则与其它事件同口径
+    if (state.project && c.cwd && projName(c.cwd) !== state.project) continue;
+    push(fmtDate(c.due || c.ts), {
+      e: { id: c.id, ts: c.ts, cwd: c.cwd, text: c.text },
+      memo: { done: !!c.done },
+      remind: c.due ? { due: c.due } : null,
+      kind: c.due ? "remind" : "memo",
+      custom: c,
+    });
+  }
+  const tsOf = (it) => (it.kind === "remind" ? it.remind.due : it.e.ts);
+  for (const arr of byDay.values()) arr.sort((a, b) => tsOf(a) - tsOf(b));
+  return byDay;
+}
+
+// 手动条目的详情卡片：结构与 entryHtml 一致；它本身是备忘（可有可无提醒时间），所以「备忘」标签常驻
+function customEntryHtml(c) {
+  const isDue = c.due && c.due <= Date.now();
+  return `
+    <div class="entry ${isDue ? "due" : ""} ${c.done ? "done" : ""}" data-id="${esc(c.id)}">
+      <div class="meta">
+        <span>${fmtDate(c.ts)} ${fmtTime(c.ts)}</span>
+        <span class="proj">${c.cwd ? esc(projName(c.cwd)) : "🌐 全局"}</span>
+        <span class="tag memo">备忘</span>
+        ${c.due ? `<span class="tag remind">提醒 ${fmtDue(c.due)}${isDue ? " · 已到期" : ""}</span>` : ""}
+        ${c.done ? `<span class="tag done">已完成</span>` : ""}
+      </div>
+      <div class="text">${esc(c.text)}</div>
+      <div class="actions">
+        <button class="customEdit" data-id="${esc(c.id)}" title="编辑内容 / 项目 / 提醒时间">✏️ 编辑</button>
+        <button class="customDone" data-id="${esc(c.id)}">${c.done ? "↩ 取消完成" : "✓ 完成"}</button>
+        <button class="customDel on" data-id="${esc(c.id)}" title="取消备忘（删除这条手动备忘）">📌 已备忘</button>
+        <button class="remindBtn ${c.due ? "on" : ""}" data-id="${esc(c.id)}" title="设置提醒">⏰${c.due ? "已提醒" : "提醒"}</button>
+      </div>
+    </div>`;
+}
+
+function calEvHtml(dayKey, it) {
+  const due = it.remind && it.remind.due <= Date.now();
+  const done = it.memo && it.memo.done;
+  // 格子里只放缩略：图标 + 时刻（提醒）+ 少量文字；全文靠悬停 title 和点开后的详情区
+  const label = it.kind === "remind" ? `⏰${fmtTime(it.remind.due)}` : "📌";
+  const cls = it.kind === "remind" ? "remind" : "memo";
+  const brief = (it.e.text || "").split("\n")[0].slice(0, 8) || "(空)";
+  return `<button class="calEv ${cls} ${due ? "due" : ""} ${done ? "done" : ""}" data-day="${dayKey}" data-id="${esc(it.e.id)}" title="${esc(it.e.text)}">${label} ${esc(brief)}</button>`;
+}
+
+function renderCalendar() {
+  const today = new Date();
+  if (!state.calMonth) state.calMonth = { y: today.getFullYear(), m: today.getMonth() };
+  const { y, m } = state.calMonth;
+  const startOffset = (new Date(y, m, 1).getDay() + 6) % 7; // 周一开头的前置空格数
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const todayKey = fmtDate(today.getTime());
+  const byDay = calEventsByDay();
+
+  const wd = ["一", "二", "三", "四", "五", "六", "日"];
+  let cells = wd.map((d) => `<div class="calHead">周${d}</div>`).join("");
+  for (let i = 0; i < startOffset; i++) cells += `<div class="calCell blank"></div>`;
+  const MAX_SHOW = 3; // 格子里最多直显 3 条，其余收进「+N 更多」
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${y}-${pad(m + 1)}-${pad(d)}`;
+    const items = byDay.get(key) || [];
+    const shown = items.slice(0, MAX_SHOW);
+    const more = items.length - shown.length;
+    cells += `<div class="calCell ${key === todayKey ? "today" : ""} ${key === state.calOpenDay ? "open" : ""}" data-day="${key}">
+      <div class="calCellHead"><button class="calDayBtn" data-day="${key}" title="展开这一天">${d}</button>${items.length ? `<span class="cnt">${items.length}</span>` : ""}</div>
+      ${shown.map((it) => calEvHtml(key, it)).join("")}
+      ${more > 0 ? `<button class="calMore calDayBtn" data-day="${key}">+${more} 更多</button>` : ""}
+    </div>`;
+  }
+
+  // 日历下方展开当天详情：完整卡片（对话条目不提供删除——日历是日程视角，删原始输入请回轨迹视图）
+  let openHtml = "";
+  if (state.calOpenDay) {
+    const items = byDay.get(state.calOpenDay);
+    if (items) {
+      openHtml = `<div class="calOpen"><h2 class="calOpenTitle">📌⏰ ${state.calOpenDay} · ${items.length} 条<button class="calCloseDay">收起 ✕</button></h2>${items.map((it) => it.custom ? customEntryHtml(it.custom) : entryHtml(it.e, true, false, true, { hideDel: true })).join("")}</div>`;
+    } else {
+      state.calOpenDay = null; // 该天已无事件（刚被取消备忘/删除等）
+    }
+  }
+
+  return `<div class="calBar">
+      <button class="calNav" data-d="-1" title="上个月">◀</button>
+      <b>${y} 年 ${m + 1} 月</b>
+      <button class="calNav" data-d="1" title="下个月">▶</button>
+      <button class="calNav calTodayBtn">今天</button>
+      <button class="calNav calAddBtn" title="新建备忘/提醒（可关联项目，可设提醒时间）">➕ 添加</button>
+      <span class="calLegend">📌 备忘（按输入日） · ⏰ 提醒（按到期日） · 点击日期或事件看详情</span>
+    </div>
+    <div class="calGrid">${cells}</div>
+    ${openHtml}`;
+}
+
 function renderAI() {
   reportsRendered = true;
   const main = $("#main");
@@ -626,10 +789,45 @@ function renderAI() {
   const lw = r.lastWorkday || "";
   const has = r.reports[lw];
 
-  let html = `<div class="introBar">🤖 AI 工作台 — <b>每日日报</b>（工作日早上 ${esc(r.reportTime)} 自动分析上个工作日，周一分析上周五）+ <b>项目分析</b>（按项目手动触发）。模型：<b>${esc(r.model || "?")}</b>（⚙ 里可换，支持 pi 的 provider/model 格式）</div>`;
+  // 段内切换：日报 / 项目分析（复用轨迹视图的 viewToggle 样式，选择记忆到 localStorage）
+  if (!state.aiTab) state.aiTab = localStorage.getItem("pil-ai-tab") || "report";
+  const aiTabs = [["report", "📋 日报"], ["proj", "📊 项目分析"]];
+  let html = `<div class="viewToggle" id="aiToggle">${aiTabs.map(([v, label]) =>
+    `<button data-aitab="${v}" class="${state.aiTab === v ? "active" : ""}">${label}</button>`).join("")}</div>`;
 
-  // ---------- 日报区 ----------
-  html += `<h2 style="margin:14px 0 8px;font-size:15px">📋 每日日报</h2>`;
+  // ---------- 项目分析区（子 tab） ----------
+  if (state.aiTab === "proj") {
+    html += `<div class="introBar">📊 项目分析 — 基于项目全部输入调用 AI 推断进展，手动触发，每次消耗模型配额。模型：<b>${esc(r.model || "?")}</b>（⚙ 里可换）</div>`;
+    const projs = new Map();
+    for (const e of state.entries) {
+      if (!projs.has(e.cwd)) projs.set(e.cwd, []);
+      projs.get(e.cwd).push(e);
+    }
+    const arr = [...projs.entries()].sort((a, b) => b[1][0].ts - a[1][0].ts);
+    if (!arr.length) html += `<div class="empty">暂无输入记录 — 先在任意已接入的 agent 里产生一些输入</div>`;
+    for (const [cwd, items] of arr) {
+      const ar = state.analysis?.results?.[cwd];
+      const newest = items[0], oldest = items[items.length - 1];
+      html += `<div class="entry projCard aiCard" data-proj="${esc(cwd)}">
+        <div class="meta">
+          <span class="proj" style="font-size:14px">📁 ${esc(projName(cwd))}</span>
+          <span title="${esc(cwd)}">${esc(cwd)}</span>
+          <span>${items.length} 条输入</span>
+          <span>${fmtDate(oldest.ts)} ~ ${fmtDate(newest.ts)}</span>
+          ${ar ? `<span>上次分析 ${fmtDate(ar.ts)} ${fmtTime(ar.ts)}</span>` : "<span style='opacity:.6'>未分析</span>"}
+        </div>
+        <div class="actions">
+          <button class="analyzeBtn ${ar ? "on" : ""}" data-id="${esc(cwd)}">${ar ? "🤖 重新分析" : "🤖 分析"}</button>
+        </div>
+        ${ar ? `<details class="analysisResult" ${state.openResults.has(cwd) ? "open" : ""}><summary>查看分析结果（${ar.inputCount} 条输入 · ${esc(ar.model)}）</summary><div class="analysisMd">${mdToHtml(ar.result)}</div></details>` : ""}
+      </div>`;
+    }
+    main.innerHTML = html;
+    return;
+  }
+
+  // ---------- 日报区（子 tab，默认） ----------
+  html += `<div class="introBar">📋 每日日报 — 工作日早上 ${esc(r.reportTime)} 自动分析上个工作日，周一分析上周五。模型：<b>${esc(r.model || "?")}</b>（⚙ 里可换，支持 pi 的 provider/model 格式）</div>`;
 
   // 最近工作日状态条
   if (lw) {
@@ -675,32 +873,6 @@ function renderAI() {
     </div>`;
   }
 
-  // ---------- 项目分析区 ----------
-  html += `<h2 style="margin:18px 0 8px;font-size:15px">📊 项目分析</h2>`;
-  html += `<p style="color:var(--dim);font-size:12px;margin-bottom:8px">基于项目全部输入调用 AI 推断进展 — 手动触发，每次消耗模型配额。</p>`;
-  const projs = new Map();
-  for (const e of state.entries) {
-    if (!projs.has(e.cwd)) projs.set(e.cwd, []);
-    projs.get(e.cwd).push(e);
-  }
-  const arr = [...projs.entries()].sort((a, b) => b[1][0].ts - a[1][0].ts);
-  for (const [cwd, items] of arr) {
-    const ar = state.analysis?.results?.[cwd];
-    const newest = items[0], oldest = items[items.length - 1];
-    html += `<div class="entry projCard aiCard" data-proj="${esc(cwd)}">
-      <div class="meta">
-        <span class="proj" style="font-size:14px">📁 ${esc(projName(cwd))}</span>
-        <span title="${esc(cwd)}">${esc(cwd)}</span>
-        <span>${items.length} 条输入</span>
-        <span>${fmtDate(oldest.ts)} ~ ${fmtDate(newest.ts)}</span>
-        ${ar ? `<span>上次分析 ${fmtDate(ar.ts)} ${fmtTime(ar.ts)}</span>` : "<span style='opacity:.6'>未分析</span>"}
-      </div>
-      <div class="actions">
-        <button class="analyzeBtn ${ar ? "on" : ""}" data-id="${esc(cwd)}">${ar ? "🤖 重新分析" : "🤖 分析"}</button>
-      </div>
-      ${ar ? `<details class="analysisResult" ${state.openResults.has(cwd) ? "open" : ""}><summary>查看分析结果（${ar.inputCount} 条输入 · ${esc(ar.model)}）</summary><div class="analysisMd">${mdToHtml(ar.result)}</div></details>` : ""}
-    </div>`;
-  }
   main.innerHTML = html;
 }
 
@@ -711,12 +883,13 @@ function render() {
   const cur = sel.value || state.project;
   sel.innerHTML = `<option value="">全部项目</option>` + projs.map((p) => `<option ${p === cur ? "selected" : ""}>${esc(p)}</option>`).join("");
 
-  // 徽标与列表同口径：只统计条目仍存在的备忘/提醒（孤儿事件不计）
+  // 徽标与列表同口径：只统计条目仍存在的备忘/提醒（孤儿事件不计），含手动添加的条目
   const memoCount = state.entries.filter((e) => state.meta.memos[e.id] && !state.meta.memos[e.id].done).length;
   const remindCount = state.entries.filter((e) => state.meta.reminders[e.id] && state.meta.reminders[e.id].due > Date.now()).length;
+  const customItems = Object.values(state.meta.custom || {});
+  const customCount = customItems.filter((c) => !c.done).length + customItems.filter((c) => c.due && c.due > Date.now()).length;
   const reportCount = Object.values(state.reports?.reports || {}).filter((x) => !x.confirmed).length;
-  $("#memoBadge").textContent = memoCount ? `(${memoCount})` : "";
-  $("#remindBadge").textContent = remindCount ? `(${remindCount})` : "";
+  $("#calBadge").textContent = memoCount + remindCount + customCount ? `(${memoCount + remindCount + customCount})` : "";
   $("#reportBadge").textContent = reportCount ? `(${reportCount})` : "";
 
   const main = $("#main");
@@ -748,31 +921,12 @@ function render() {
     main.innerHTML = viewBar + [...byDay.entries()].map(([d, items]) =>
       `<section class="day"><h2>${d} · ${items.length} 条</h2>${items.map((e) => entryHtml(e)).join("")}</section>`
     ).join("");
-  } else if (state.tab === "memos") {
-    const memos = list.filter((e) => state.meta.memos[e.id]);
-    if (!memos.length) { main.innerHTML = `<div class="empty">还没有备忘 — 在轨迹里点「📌 备忘」把某条输入钉到这里</div>`; return; }
-    main.innerHTML = memos.map((e) => `
-      <div class="entry ${state.meta.memos[e.id].done ? "done" : ""}" data-id="${e.id}">
-        <div class="meta"><span>${fmtDate(e.ts)} ${fmtTime(e.ts)}</span><span class="proj">${esc(projName(e.cwd))}</span></div>
-        <div class="text">${esc(e.text)}</div>
-        <div class="actions" style="display:flex">
-          <button class="memoDone" data-id="${e.id}">${state.meta.memos[e.id].done ? "↩ 取消完成" : "✓ 完成"}</button>
-          <button class="memoBtn on" data-id="${e.id}">取消备忘</button>
-        </div>
-      </div>`).join("");
+  } else if (state.tab === "calendar") {
+    main.innerHTML = renderCalendar();
   } else if (state.tab === "ai") {
     renderAI();
   } else {
-    // 提醒 tab 原有逻辑
-    const now = Date.now();
-    const re = list.filter((e) => state.meta.reminders[e.id]);
-    const due = re.filter((e) => state.meta.reminders[e.id].due <= now);
-    const upcoming = re.filter((e) => state.meta.reminders[e.id].due > now).sort((a, b) => state.meta.reminders[a.id].due - state.meta.reminders[b.id].due);
-    if (!re.length) { main.innerHTML = `<div class="empty">还没有提醒 — 在轨迹里点「⏰ 提醒」给某条输入设定时间</div>`; return; }
-    const sec = (title, items) => items.length
-      ? `<section class="day"><h2>${title} · ${items.length} 条</h2>${items.map((e) => entryHtml(e, true)).join("")}</section>` : "";
-    main.innerHTML = sec("已到期", due) + sec("即将到来", upcoming) +
-      `<p style="color:var(--dim);font-size:12px;margin-top:10px">提示：到期条目会红框高亮（页面打开时可见，不做系统通知）。</p>`;
+    main.innerHTML = `<div class="empty">未知视图</div>`;
   }
 }
 
@@ -809,6 +963,44 @@ $("#main").addEventListener("click", async (ev) => {
   if (vb) {
     state.view = vb.dataset.view;
     localStorage.setItem("pil-view", state.view);
+    render();
+    return;
+  }
+  const aiT = ev.target.closest && ev.target.closest("#aiToggle button");
+  if (aiT) {
+    state.aiTab = aiT.dataset.aitab;
+    localStorage.setItem("pil-ai-tab", state.aiTab);
+    renderAI();
+    return;
+  }
+  if (ev.target.closest && ev.target.closest(".calAddBtn")) { // 必须在 calNav 之前：➕ 也带 calNav 样式类
+    openCustomDlg();
+    return;
+  }
+  const calNav = ev.target.closest && ev.target.closest(".calNav");
+  if (calNav) {
+    if (calNav.classList.contains("calTodayBtn")) {
+      const t = new Date();
+      state.calMonth = { y: t.getFullYear(), m: t.getMonth() };
+    } else {
+      let { y, m } = state.calMonth;
+      m += Number(calNav.dataset.d);
+      if (m < 0) { m = 11; y--; } else if (m > 11) { m = 0; y++; }
+      state.calMonth = { y, m };
+    }
+    render();
+    return;
+  }
+  // 点击格子里任何位置（日期数字 / 事件条 / 空白处）都 = 选中这一天；再点同一天收起。
+  // blank 填充格没有 data-day，自然不响应
+  const calDay = ev.target.closest && ev.target.closest(".calDayBtn, .calEv, .calCell");
+  if (calDay && calDay.dataset.day) {
+    state.calOpenDay = state.calOpenDay === calDay.dataset.day ? null : calDay.dataset.day;
+    render();
+    return;
+  }
+  if (ev.target.closest && ev.target.closest(".calCloseDay")) {
+    state.calOpenDay = null;
     render();
     return;
   }
@@ -852,6 +1044,20 @@ $("#main").addEventListener("click", async (ev) => {
   if (!entryEl) return;
   const id = entryEl.dataset.id;
 
+  if (btn && btn.classList.contains("customEdit")) {
+    openCustomDlg(id);
+    return;
+  }
+  if (btn && btn.classList.contains("customDone")) {
+    const c = state.meta.custom[id];
+    if (c) await api("/api/custom", { ...c, done: !c.done });
+    refresh(); return;
+  }
+  if (btn && btn.classList.contains("customDel")) {
+    // 手动条目的「📌 已备忘」= 取消备忘 = 删除这条手动备忘（与对话条目取消备忘同样轻量，无确认）
+    await api("/api/custom/del", { id });
+    refresh(); return;
+  }
   if (btn && btn.classList.contains("memoBtn")) {
     const on = !state.meta.memos[id];
     await api("/api/memo", { id, memo: on });
@@ -862,17 +1068,8 @@ $("#main").addEventListener("click", async (ev) => {
     refresh(); return;
   }
   if (btn && btn.classList.contains("remindBtn")) {
-    entryEl.querySelector(".remind-row").classList.toggle("open");
+    openRemindDlg(id);
     return;
-  }
-  if (btn && btn.classList.contains("remindSave")) {
-    const v = entryEl.querySelector(".remind-row input").value;
-    if (v) await api("/api/remind", { id, due: new Date(v).getTime() });
-    refresh(); return;
-  }
-  if (btn && btn.classList.contains("remindClear")) {
-    await api("/api/remind", { id, due: null });
-    refresh(); return;
   }
   if (btn && (btn.classList.contains("reportGen") || btn.classList.contains("reportRegen"))) {
     const day = btn.dataset.day;
@@ -957,6 +1154,104 @@ $("#main").addEventListener("keydown", (ev) => {
 
 refresh();
 setInterval(refresh, 5000);
+
+// ---------- 提醒设置弹窗 ----------
+// 弹窗挂在 main 之外，不受 5 秒轮询重建影响；快捷按钮一键保存，自定义时间兜底
+
+let remindTargetId = null;
+
+function openRemindDlg(id) {
+  const e = state.entries.find((x) => x.id === id);
+  const c = (state.meta.custom || {})[id]; // 手动条目也能设提醒
+  if (!e && !c) return;
+  remindTargetId = id;
+  $("#remindText").textContent = ((e && e.text) || c.text || "").slice(0, 200);
+  const remind = e ? state.meta.reminders[id] : (c.due ? { due: c.due } : null);
+  $("#remindInput").value = remind ? toLocalInput(remind.due) : "";
+  // 快捷项每次打开都基于当前时刻重算（「明早」才是真的明早）
+  const at = (dayAdd, h, m) => { const d = new Date(); d.setDate(d.getDate() + dayAdd); d.setHours(h, m, 0, 0); return d.getTime(); };
+  const nextMonday = () => { const d = new Date(); const add = (8 - d.getDay()) % 7 || 7; return at(add, 9, 0); };
+  const quick = [
+    ["⏱ 1 小时后", Date.now() + 3600e3],
+    ["⏱ 3 小时后", Date.now() + 3 * 3600e3],
+    ["🌙 今晚 20:00", new Date().getHours() < 20 ? at(0, 20, 0) : at(1, 20, 0)],
+    ["🌅 明早 09:00", at(1, 9, 0)],
+    ["📅 明天此时", at(1, new Date().getHours(), new Date().getMinutes())],
+    ["📆 下周一 09:00", nextMonday()],
+  ];
+  const box = $("#remindQuick");
+  box.innerHTML = "";
+  for (const [label, ts] of quick) {
+    const b = document.createElement("button");
+    b.className = "quickBtn";
+    b.textContent = label;
+    b.title = `设为 ${fmtDate(ts)} ${fmtTime(ts)}`;
+    b.onclick = () => saveRemind(ts);
+    box.appendChild(b);
+  }
+  $("#remindDlg").showModal();
+}
+
+async function saveRemind(due) {
+  if (!remindTargetId) return;
+  const c = (state.meta.custom || {})[remindTargetId];
+  try {
+    if (c) await api("/api/custom", { ...c, due }); // 手动条目：全量更新 due
+    else await api("/api/remind", { id: remindTargetId, due });
+    $("#remindDlg").close();
+    refresh();
+  } catch (err) {
+    alert("保存失败：" + (err && err.message ? err.message : err));
+  }
+}
+
+$("#remindSaveCustom").addEventListener("click", () => {
+  const v = $("#remindInput").value;
+  if (!v) { alert("请先选择时间"); return; }
+  saveRemind(new Date(v).getTime());
+});
+$("#remindClearBtn").addEventListener("click", () => saveRemind(null));
+$("#remindCancel").addEventListener("click", () => $("#remindDlg").close());
+
+// ---------- 手动新建 / 编辑备忘 · 提醒 ----------
+
+let customEditId = null; // null = 新建；否则为编辑中的手动条目 id
+
+function openCustomDlg(id) {
+  customEditId = id || null;
+  const c = customEditId ? (state.meta.custom || {})[customEditId] : null;
+  if (customEditId && !c) return;
+  $("#customDlgTitle").textContent = c ? "✏️ 编辑备忘 / 提醒" : "➕ 新建备忘 / 提醒";
+  $("#customText").value = c ? c.text : "";
+  $("#customDue").value = c && c.due ? toLocalInput(c.due) : "";
+  const projs = [...new Set(state.entries.map((e) => e.cwd).filter(Boolean))].sort();
+  $("#customProj").innerHTML = `<option value="">🌐 全局（不关联项目）</option>` +
+    projs.map((p) => `<option value="${esc(p)}">${esc(projName(p))}</option>`).join("");
+  if (c) $("#customProj").value = c.cwd || "";
+  $("#customDlg").showModal();
+}
+
+$("#customSave").addEventListener("click", async () => {
+  const text = $("#customText").value.trim();
+  if (!text) { alert("请填写内容"); return; }
+  const due = $("#customDue").value ? new Date($("#customDue").value).getTime() : null;
+  const body = { text, cwd: $("#customProj").value, due };
+  if (customEditId) { // 编辑：全量更新，保留完成状态
+    const c = (state.meta.custom || {})[customEditId];
+    if (!c) { alert("原条目已不存在"); return; }
+    body.id = customEditId;
+    body.done = c.done;
+  }
+  try {
+    await api("/api/custom", body);
+    customEditId = null;
+    $("#customDlg").close();
+    refresh();
+  } catch (err) {
+    alert("保存失败：" + (err && err.message ? err.message : err));
+  }
+});
+$("#customCancel").addEventListener("click", () => { customEditId = null; $("#customDlg").close(); });
 
 // ---------- 设置 ----------
 

@@ -22,20 +22,22 @@ pi trail 是一个 [pi](https://github.com/earendil-works/pi-coding-agent) 插�
 ## 功能特性
 
 - 📝 **只记录你的输入**——TUI 手打与 pi-web 网页输入都算；skill 调用（`/skill:name`）原样记一行，永不展开正文。子代理会话（内存会话、或 `类型#哈希` 命名的落盘会话）与扩展注入消息在写入端和读取端双重过滤。
-- 🧭 **五种轨迹视图**——💬 对话（扁平列表，按会话名或首条输入命名）、📅 按天、🌲 树形（电脑 → 项目 → 对话）、🐟 鱼骨、📊 分析。
+- 🧭 **四种轨迹视图**——💬 对话（按会话名或首条输入命名）、📅 按天、🌲 树形（电脑 → 项目 → 对话）、🐟 鱼骨；正文顶部的切换条一键换视图，选择会被记住。
 - 🐟 **鱼骨图时间线**——每个项目一根主骨，每场对话一根鱼刺，按时间顺序**等间距**排列（序数刻度：时间关系由鱼刺标签的具体时刻 + 主骨上的日期分界虚线表达，视图默认滚到最右/最新）；每场对话一种稳定颜色，贯穿鱼刺、标签与展开块；刺越粗 / 标签尾数字越大＝输入越多。点击展开：主骨上出现该对话每次输入的小刺（悬停看时间与内容）。可折叠、支持键盘。
 - 🖥 **多主机感知**——每条记录带机器 GUID + 主机名，主机重名也绝不混淆。
 - 🔁 **git 版本化 + 多机同步**——数据是独立 git 仓库（`~/.pi/trail`）。配置任意远程仓库后，多台机器自动 fetch → 互相变基 → push。追加式 JSONL + `merge=union` 让并发写入永不冲突。
-- 📌 **备忘录与提醒**——任意输入可钉为备忘、设到期提醒；标注是追加式事件，同步安全。
+- 📅 **日历：备忘 + 提醒**——月历视图把所有备忘与提醒排在对应的日子上：对话输入可钉为备忘（按输入日落格）、可设到期提醒（按到期日落格，到期红底高亮）；也能**手动添加**与对话无关的备忘/提醒，可关联项目（留空即全局）。格子里只显示缩略条，点开日期在下方看完整内容并操作。提醒支持一键快捷时间（1 小时后 / 今晚 / 明早 / 下周一…）与自定义时间弹窗。
 - 🤖 **AI 项目分析**——每项目一次点击：模型读取该项目全部输入历史，输出当前阶段 / 进行中的工作 / 时间线 / 可能的下一步。**纯手动触发**，无隐藏调用。
 - 📋 **每日日报**——每个工作日早上自动分析上一个工作日（周一分析上周五）的全部输入，生成 2-3 条简短日报；待确认卡片 + 徽标提醒，错过的日期可一键补齐，结果随数据仓库 git 同步。
-- 🧠 **复用 pi 的模型配置**——AI 分析与日报直接使用 pi 的 `models.json`/`auth.json` 模型体系（支持任意 provider，如 `thriking-v1/deepseek-v4-flash`），⚙ 设置与 🤖 AI tab 内下拉选择，无需手填模型名；每次调用时实时读取 pi 配置，不落盘不拷贝 key。
+- 🧠 **复用 pi 的模型配置**——AI 分析与日报直接使用 pi 的 `models.json`/`auth.json` 模型体系（支持任意 provider，如 `thriking-v1/deepseek-v4-flash`），⚙ 设置里下拉选择，无需手填模型名；每次调用时实时读取 pi 配置，不落盘不拷贝 key。
 - 🛡 **本地优先**——无遥测、无云端。网页只绑定你的局域网（可配置），数据不经你配置的 git remote 绝不出你的机器。
 - 🔌 **零配置服务**——扩展自动拉起并守护一个零依赖 Node 服务，挂了自动拉回，你永远不用管进程。
 
 ![tree view](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-tree.png)
 
 ![fishbone view](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-fishbone.png)
+
+![calendar view](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-calendar.png)
 
 ## 安装
 
@@ -121,7 +123,7 @@ curl -X POST http://localhost:7799/api/record \
 | `source` | `interactive`（TUI）/ `rpc`（pi-web）/ `hook`（其它 agent 钩子）/ `backfill`（回填） |
 | `kind` | `input` 或 `skill` |
 
-标注（备忘、提醒、软删除）是 `meta.jsonl` 里的追加式事件，按时间戳重放——union 合并下天然安全。
+标注（备忘、提醒、软删除）与手动添加的备忘/提醒条目，都是 `meta.jsonl` 里的追加式事件，按时间戳重放——union 合并下天然安全。
 
 ## 多主机同步
 
@@ -135,7 +137,9 @@ curl -X POST http://localhost:7799/api/record \
 
 ## AI 工作台（🤖 AI tab）
 
-分析与日报合并放在 **🤖 AI** tab：上方是**每日日报**，下方是**项目分析**。
+分析与日报放在 **🤖 AI** tab 内，正文顶部的子 tab 切换（📋 日报 / 📊 项目分析），选择会被记住。
+
+![ai workspace](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-ai.png)
 
 ### AI 项目分析
 

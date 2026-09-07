@@ -68,7 +68,7 @@ function saveConfig(cfg) {
 // 追加式事件日志。union 合并会打乱行序，重放前按事件 ts 排序保证各主机状态一致。
 
 function emptyMeta() {
-  return { memos: {}, reminders: {}, deleted: {} };
+  return { memos: {}, reminders: {}, deleted: {}, custom: {} };
 }
 
 function replayMeta() {
@@ -98,6 +98,9 @@ function replayMeta() {
     else if (ev.op === "remind") meta.reminders[ev.id] = { due: ev.due, ts: ev.ts };
     else if (ev.op === "unremind") delete meta.reminders[ev.id];
     else if (ev.op === "delete") meta.deleted[ev.id] = ev.ts;
+    // 手动添加的备忘/提醒：事件即全量快照（text/cwd/due/done 全量覆盖），与对话条目无关
+    else if (ev.op === "custom") meta.custom[ev.id] = { id: ev.id, text: ev.text || "", cwd: ev.cwd || "", due: ev.due || null, done: !!ev.done, ts: ev.ts };
+    else if (ev.op === "custom-del") delete meta.custom[ev.id];
   }
   return meta;
 }
@@ -865,6 +868,27 @@ const server = createServer(async (req, res) => {
       const b = await readBody(req);
       if (!b.id) return json(res, 400, { error: "id required" });
       appendEvent({ op: "delete", id: b.id, ts: Date.now() });
+      queueCommit();
+      return json(res, 200, replayMeta());
+    }
+
+    // 手动备忘/提醒（与对话无关）：POST /api/custom { id?, text, cwd?, due?, done? }
+    // id 省略 = 新建；带 id = 全量更新（改文本/改提醒时间/标记完成都走这里）
+    if (req.method === "POST" && p === "/api/custom") {
+      const b = await readBody(req);
+      const text = String(b.text || "").trim();
+      if (!text) return json(res, 400, { error: "text required" });
+      const id = b.id || `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      appendEvent({ op: "custom", id, ts: Date.now(), text, cwd: String(b.cwd || ""), due: b.due ? Number(b.due) : null, done: !!b.done });
+      queueCommit();
+      return json(res, 200, replayMeta());
+    }
+
+    // 删除手动备忘/提醒：POST /api/custom/del { id }
+    if (req.method === "POST" && p === "/api/custom/del") {
+      const b = await readBody(req);
+      if (!b.id) return json(res, 400, { error: "id required" });
+      appendEvent({ op: "custom-del", id: b.id, ts: Date.now() });
       queueCommit();
       return json(res, 200, replayMeta());
     }
