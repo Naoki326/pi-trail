@@ -34,6 +34,14 @@ const debug = (msg) => {
   if (DEBUG) process.stderr.write(`[pi-trail] ${msg}\n`);
 };
 
+// 无 --agent 时按运行环境识别宿主 agent（插件 hooks 文件跨平台共用时用）；
+// zcode 兼容注入 CLAUDE_PLUGIN_ROOT，必须先查 ZCODE_ 再查 CLAUDE_
+function detectAgent() {
+  if (process.env.ZCODE_PLUGIN_ROOT) return "zcode";
+  if (process.env.CLAUDE_PLUGIN_ROOT) return "claude-code";
+  return undefined;
+}
+
 function readStdin() {
   // 事件式读取；Windows 上对 stdin 用 for-await + process.exit 会触发 libuv 断言崩溃
   return new Promise((resolve) => {
@@ -57,7 +65,7 @@ async function postRecord(port, payload) {
 }
 
 async function main() {
-  const agent = argOf("--agent") || process.env.PI_TRAIL_AGENT || undefined;
+  const agent = argOf("--agent") || process.env.PI_TRAIL_AGENT || detectAgent();
   const storeDir = argOf("--store") || defaultStoreDir();
   const port = Number(argOf("--port")) || resolvePort();
   const manualText = argOf("--text");

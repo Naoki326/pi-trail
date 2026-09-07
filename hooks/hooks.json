@@ -1,0 +1,28 @@
+{
+  "description": "pi-trail — 记录你亲手输入的每条指令（跨 agent 通用；agent 名由 recorder 按运行环境自动识别）",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/recorder.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/recorder.mjs\" --ensure-server",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

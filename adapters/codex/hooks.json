@@ -1,0 +1,17 @@
+{
+  "description": "pi-trail codex 适配 — 复制到 ~/.codex/hooks.json（已有文件则把 UserPromptSubmit 组合并进去）",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"<pi-trail runtime>/recorder.mjs\" --agent codex",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

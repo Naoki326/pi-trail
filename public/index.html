@@ -27,11 +27,12 @@
   }
   .tabs button.active { background: var(--panel2); color: var(--text); border-color: var(--border); }
   .tabs button .badge { color: var(--accent2); font-size: 12px; }
-  .viewToggle { display: flex; gap: 4px; margin-left: 2px; }
+  .viewToggle { display: inline-flex; gap: 4px; margin-bottom: 14px; }
   .viewToggle button {
     background: none; border: 1px solid transparent; color: var(--dim);
     padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
   }
+  .viewToggle button:hover { color: var(--text); }
   .viewToggle button.active { background: var(--panel2); color: var(--text); border-color: var(--border); }
   .treeHead {
     display: flex; align-items: center; gap: 6px; width: 100%;
@@ -183,14 +184,6 @@
     <div class="hrow">
       <input id="search" type="search" placeholder="搜索输入内容…">
       <select id="projectFilter"><option value="">全部项目</option></select>
-    </div>
-    <div class="hrow" id="viewToggleRow">
-      <div class="viewToggle" id="viewToggle">
-        <button data-view="conv">💬 对话</button>
-        <button data-view="day">📅 按天</button>
-        <button data-view="tree">🌲 树形</button>
-        <button data-view="fish">🐟 鱼骨</button>
-      </div>
     </div>
   </div>
 </header>
@@ -617,6 +610,13 @@ function renderFish(list) {
   return html;
 }
 
+// 视图切换条：渲染在正文顶部（仅轨迹 tab），随 render 重建 → active 直接写在 HTML 里
+function viewToggleHtml() {
+  const views = [["conv", "💬 对话"], ["day", "📅 按天"], ["tree", "🌲 树形"], ["fish", "🐟 鱼骨"]];
+  return `<div class="viewToggle" id="viewToggle">${views.map(([v, label]) =>
+    `<button data-view="${v}" class="${state.view === v ? "active" : ""}">${label}</button>`).join("")}</div>`;
+}
+
 function renderAI() {
   reportsRendered = true;
   const main = $("#main");
@@ -721,21 +721,22 @@ function render() {
 
   const main = $("#main");
   const list = visible();
+  const viewBar = state.tab === "timeline" ? viewToggleHtml() : "";
 
   if (state.tab === "timeline" && state.view === "fish") {
-    main.innerHTML = renderFish(list);
+    main.innerHTML = viewBar + renderFish(list);
     // 鱼刺按时间序向右延伸：默认滚到最右（最新对话），免拖动；展开/收起重渲染时由外层恢复用户位置
     document.querySelectorAll(".fishWrap").forEach((el) => { if (el.scrollWidth > el.clientWidth) el.scrollLeft = el.scrollWidth; });
     return;
   }
   if (state.tab === "timeline") {
-    if (!list.length) { main.innerHTML = `<div class="empty">暂无记录 — 在 pi / zcode 等任意已接入的 agent 里随便输入点什么，几秒后这里就会出现</div>`; return; }
+    if (!list.length) { main.innerHTML = viewBar + `<div class="empty">暂无记录 — 在 pi / zcode 等任意已接入的 agent 里随便输入点什么，几秒后这里就会出现</div>`; return; }
     if (state.view === "conv") {
-      main.innerHTML = renderConv(list);
+      main.innerHTML = viewBar + renderConv(list);
       return;
     }
     if (state.view === "tree") {
-      main.innerHTML = renderTree(list);
+      main.innerHTML = viewBar + renderTree(list);
       return;
     }
     const byDay = new Map();
@@ -744,7 +745,7 @@ function render() {
       if (!byDay.has(d)) byDay.set(d, []);
       byDay.get(d).push(e);
     }
-    main.innerHTML = [...byDay.entries()].map(([d, items]) =>
+    main.innerHTML = viewBar + [...byDay.entries()].map(([d, items]) =>
       `<section class="day"><h2>${d} · ${items.length} 条</h2>${items.map((e) => entryHtml(e)).join("")}</section>`
     ).join("");
   } else if (state.tab === "memos") {
@@ -777,32 +778,14 @@ function render() {
 
 // ---------- 事件 ----------
 
-function syncHeader() {
-  // 视图切换只属于轨迹 tab（第三行）；其他 tab 隐藏整行，保持搜索/项目下拉行统一
-  $("#viewToggleRow").style.display = state.tab === "timeline" ? "flex" : "none";
-}
-
 document.querySelectorAll(".tabs button").forEach((b) =>
   b.addEventListener("click", async () => {
     state.tab = b.dataset.tab;
     document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x === b));
-    syncHeader();
     if (state.tab === "ai") await ensureAnalysisData();
     render();
   }));
-syncHeader();
-
-document.querySelectorAll("#viewToggle button").forEach((b) =>
-  b.addEventListener("click", async () => {
-    state.view = b.dataset.view;
-    localStorage.setItem("pil-view", state.view);
-    syncViewToggle();
-    render();
-  }));
-function syncViewToggle() {
-  document.querySelectorAll("#viewToggle button").forEach((x) => x.classList.toggle("active", x.dataset.view === state.view));
-}
-syncViewToggle();
+// 视图切换按钮随正文重建 → 事件委托到 #main（见下方大监听器开头）
 
 let searchTimer;
 $("#search").addEventListener("input", (ev) => {
@@ -822,6 +805,13 @@ $("#main").addEventListener("toggle", (ev) => {
 }, true);
 
 $("#main").addEventListener("click", async (ev) => {
+  const vb = ev.target.closest && ev.target.closest("#viewToggle button");
+  if (vb) {
+    state.view = vb.dataset.view;
+    localStorage.setItem("pil-view", state.view);
+    render();
+    return;
+  }
   const bone = ev.target.closest && ev.target.closest("g.bone");
   if (bone) {
     const k = bone.dataset.key;

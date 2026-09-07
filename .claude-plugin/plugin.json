@@ -1,0 +1,7 @@
+{
+  "name": "pi-trail",
+  "version": "2.6.0",
+  "description": "自动记录你在本 agent 里亲手输入的每条指令，汇入本地工作轨迹（pi trail，网页 http://localhost:7799）",
+  "homepage": "https://github.com/Naoki326/pi-trail#readme",
+  "license": "MIT"
+}

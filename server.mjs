@@ -236,7 +236,7 @@ function gitData(args) {
 let repoOk = false;
 let lastSync = { at: 0, ok: null, error: "" };
 
-const GITIGNORE = "*.log\nserver.pid\nconfig.json\nmeta.json.migrated\n";
+const GITIGNORE = "*.log\nserver.pid\nconfig.json\nmeta.json.migrated\nruntime/\n";
 const GITATTR = "entries.jsonl merge=union\nmeta.jsonl merge=union\n";
 
 function writeTextIfChanged(p, content) {
@@ -252,8 +252,15 @@ function writeTextIfChanged(p, content) {
 }
 
 async function detectRepo() {
-  const r = await gitData(["rev-parse", "--is-inside-work-tree"]);
-  if (r.err || r.stdout.trim() !== "true") {
+  // 只认数据目录自己的 .git：git 会向上发现父仓库（比如把数据目录放进某个项目里时），
+  // 此时绝不能在父仓库里做 scaffolding/commit——就地 init 一个嵌套仓库。
+  let ownRepo = false;
+  const top = await gitData(["rev-parse", "--show-toplevel"]);
+  if (!top.err) {
+    const norm = (p) => p.trim().replace(/[\\/]+$/, "").toLowerCase();
+    ownRepo = norm(top.stdout) === norm(STORE_DIR);
+  }
+  if (!ownRepo) {
     const init = await gitData(["init", "-b", "main"]);
     if (init.err) {
       console.log("[pi-trail] git 初始化失败，git 功能停用：", init.stderr.trim());

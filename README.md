@@ -47,50 +47,48 @@ pi install git:github.com/Naoki326/pi-trail
 
 重启 pi（或 `/reload`），打开 **http://localhost:7799**——几秒后你的首批输入就会出现。记录从安装时刻开始，不回填历史。
 
-## 接入其它 agent（zcode / Claude Code / …）
+## 接入其它 agent（zcode / Claude Code / Codex / …）
 
 所有 agent 共用同一个轨迹仓库（`~/.pi/trail`）与同一个查看服务；网页里每条输入按来源带 ⚡ 徽标，AI 分析与日报会综合全部 agent 的输入。
 
-### zcode
+### 一键接入
 
-zcode 走 [hooks](https://zcode.z.ai/cn/docs/hooks) 机制。把 [`adapters/zcode/hooks.json`](adapters/zcode/hooks.json) 里的 `hooks` 块合并进 **用户级** `~/.zcode/cli/config.json`（`hooks.enabled: true` 必须保留；项目级 hooks 目前会被 zcode 整体忽略），并把 `<pi-trail 绝对路径>` 换成你的检出路径：
-
-```json
-"hooks": {
-  "enabled": true,
-  "events": {
-    "UserPromptSubmit": [
-      { "hooks": [ { "type": "process", "command": "node",
-        "args": ["C:/path/to/pi-trail/recorder.mjs", "--agent", "zcode"], "timeoutMs": 10000 } ] }
-    ],
-    "SessionStart": [
-      { "matcher": "startup|resume|clear",
-        "hooks": [ { "type": "process", "command": "node",
-        "args": ["C:/path/to/pi-trail/recorder.mjs", "--agent", "zcode", "--ensure-server"], "timeoutMs": 10000 } ] }
-    ]
-  }
-}
+```bash
+npx pi-trail setup zcode        # 或 claude-code / codex / all（npm 包方式）
+node setup.mjs zcode            # 或从本仓库源码执行
 ```
 
-- 钩子配置在**会话启动时快照**——改完配置请新建会话验证。
-- 已知限制：桌面端内置 agent 曾有钩子不触发的反馈（[zai-org/feedback#32](https://github.com/zai-org/feedback/issues/32)，P2 跟进中），CLI 会话不受影响。
+安装器做两件事，均可重复执行：
 
-### Claude Code
+- 把运行时（recorder / 查看服务）复制到稳定位置 **`~/.pi/trail/runtime/`** —— 安装源（npx 缓存、git 检出）之后移动或清理都不影响运行；重跑 setup 即更新运行时；
+- **无破坏合并**钩子进对应配置：只追加 pi-trail 自己的钩子，现有内容原样保留；首次修改前自动备份为 `<配置文件>.pi-trail.bak`。
 
-把 [`adapters/claude-code/settings.json`](adapters/claude-code/settings.json) 里的 `hooks` 块合并进 `~/.claude/settings.json`：
+各 agent 的配置位置与生效方式：
 
-```json
-"hooks": {
-  "UserPromptSubmit": [
-    { "hooks": [ { "type": "command",
-      "command": "node /path/to/pi-trail/recorder.mjs --agent claude-code" } ] }
-  ]
-}
+| agent | 配置文件 | 生效方式 |
+|---|---|---|
+| zcode | `~/.zcode/cli/config.json` | **新建会话**（钩子按会话启动时快照；项目级 hooks 会被 zcode 忽略，故写入用户级） |
+| Claude Code | `~/.claude/settings.json` | 新建会话；现有钩子全部保留、并存执行 |
+| Codex | `~/.codex/hooks.json` | 在 codex CLI 里执行 `/hooks` **信任一次**后生效（非托管钩子必须审查） |
+
+其它命令：
+
+```bash
+npx pi-trail list             # 查看各 agent 接入状态
+npx pi-trail remove zcode     # 卸载（数据与 runtime 保留）
 ```
 
-### 其它 agent
+pi 无需 setup —— 本包就是 pi 插件：`pi install npm:pi-trail`。
 
-任何能执行命令或发 HTTP 请求的 agent 都能接入，两种方式任选：
+### 插件方式安装（可选）
+
+本仓库同时打包为 Claude Code / zcode 插件（`.claude-plugin/plugin.json` + `hooks/hooks.json`，两者清单格式互相兼容）：把仓库注册为插件市场源后即可随插件安装、启停，钩子里的 agent 名由 recorder 按运行环境自动识别，无需配置。
+
+### 手动接入（可选）
+
+不想跑安装器，也可以按 [`adapters/`](adapters/) 里的片段手工合并：[zcode](adapters/zcode/hooks.json) / [Claude Code](adapters/claude-code/settings.json) / [Codex](adapters/codex/hooks.json)（`<pi-trail 绝对路径>` 换成你的 runtime 或检出路径）。
+
+任何能执行命令或发 HTTP 请求的 agent 还可以直接调通用记录器：
 
 ```bash
 # 方式一：通用记录器（stdin 收 hook JSON，字段 prompt / cwd / session_id）
@@ -103,6 +101,8 @@ curl -X POST http://localhost:7799/api/record \
 ```
 
 记录器的过滤规则与 pi 一致：空输入不记；斜杠命令记为 skill（`/clear`、`/compact` 等常见内置命令除外）；服务不可达时自动拉起，仍失败则本地直写兜底，绝不影响宿主 agent。
+
+已知限制：zcode 桌面端内置 agent 曾有钩子不触发的反馈（[zai-org/feedback#32](https://github.com/zai-org/feedback/issues/32)，P2 跟进中），CLI 会话不受影响。
 
 ## 数据
 

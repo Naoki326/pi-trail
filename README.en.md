@@ -46,50 +46,48 @@ pi install git:github.com/Naoki326/pi-trail
 
 Then restart pi (or `/reload`) and open **http://localhost:7799** — your first inputs appear within seconds. Recording starts at install time; entries are never back-dated.
 
-## Other agents (zcode / Claude Code / …)
+## Other agents (zcode / Claude Code / Codex / …)
 
 All agents share the same trail repo (`~/.pi/trail`) and the same viewer; entries carry an ⚡ badge per source, and AI analysis & daily reports cover every agent together.
 
-### zcode
+### One-command setup
 
-zcode integrates via [hooks](https://zcode.z.ai/cn/docs/hooks). Merge the `hooks` block from [`adapters/zcode/hooks.json`](adapters/zcode/hooks.json) into your **user-level** `~/.zcode/cli/config.json` (keep `hooks.enabled: true`; project-level hooks are currently ignored by zcode entirely) and point `<pi-trail path>` at your checkout:
-
-```json
-"hooks": {
-  "enabled": true,
-  "events": {
-    "UserPromptSubmit": [
-      { "hooks": [ { "type": "process", "command": "node",
-        "args": ["C:/path/to/pi-trail/recorder.mjs", "--agent", "zcode"], "timeoutMs": 10000 } ] }
-    ],
-    "SessionStart": [
-      { "matcher": "startup|resume|clear",
-        "hooks": [ { "type": "process", "command": "node",
-        "args": ["C:/path/to/pi-trail/recorder.mjs", "--agent", "zcode", "--ensure-server"], "timeoutMs": 10000 } ] }
-    ]
-  }
-}
+```bash
+npx pi-trail setup zcode        # or claude-code / codex / all (npm package)
+node setup.mjs zcode            # or run from a source checkout
 ```
 
-- Hook config is **snapshotted at session start** — start a new session after editing.
-- Known limitation: the desktop's built-in agent was reported not to fire config hooks ([zai-org/feedback#32](https://github.com/zai-org/feedback/issues/32), P2, tracked); CLI sessions are unaffected.
+The installer does two things, both idempotent:
 
-### Claude Code
+- Copies the runtime (recorder / viewer service) to a stable location, **`~/.pi/trail/runtime/`** — moving or deleting the install source (npx cache, git checkout) afterwards changes nothing; re-run setup to update the runtime;
+- **Non-destructively merges** hooks into each agent's config: only pi-trail's own hooks are added, everything else is preserved untouched; the original file is backed up as `<config>.pi-trail.bak` before the first change.
 
-Merge the `hooks` block from [`adapters/claude-code/settings.json`](adapters/claude-code/settings.json) into `~/.claude/settings.json`:
+Where each agent's config lives and how changes take effect:
 
-```json
-"hooks": {
-  "UserPromptSubmit": [
-    { "hooks": [ { "type": "command",
-      "command": "node /path/to/pi-trail/recorder.mjs --agent claude-code" } ] }
-  ]
-}
+| Agent | Config file | Activation |
+|---|---|---|
+| zcode | `~/.zcode/cli/config.json` | **New session** (hooks are snapshotted at session start; project-level hooks are ignored by zcode, so this is user-level) |
+| Claude Code | `~/.claude/settings.json` | New session; existing hooks are preserved and run alongside |
+| Codex | `~/.codex/hooks.json` | Run `/hooks` inside the codex CLI and **trust once** (non-managed hooks require review) |
+
+More commands:
+
+```bash
+npx pi-trail list             # per-agent integration status
+npx pi-trail remove zcode     # uninstall (data and runtime are kept)
 ```
 
-### Any other agent
+pi needs no setup — this package *is* a pi plugin: `pi install npm:pi-trail`.
 
-Anything that can run a command or make an HTTP request can join in:
+### Install as a plugin (optional)
+
+The repo is also packaged as a Claude Code / zcode plugin (`.claude-plugin/plugin.json` + `hooks/hooks.json`; the two manifest formats are mutually compatible): register the repo as a marketplace source and install it like any plugin. The agent name is auto-detected by the recorder from the runtime environment — no per-platform configuration.
+
+### Manual setup (optional)
+
+Prefer not to run the installer? Merge the snippets in [`adapters/`](adapters/) by hand: [zcode](adapters/zcode/hooks.json) / [Claude Code](adapters/claude-code/settings.json) / [Codex](adapters/codex/hooks.json) (replace `<pi-trail runtime>` with your runtime or checkout path).
+
+Any agent that can run a command or make an HTTP request can also call the recorder directly:
 
 ```bash
 # Option 1: the universal recorder (reads hook JSON from stdin: prompt / cwd / session_id)
@@ -102,6 +100,8 @@ curl -X POST http://localhost:7799/api/record \
 ```
 
 The recorder applies the same rules as the pi extension: empty input is skipped; slash commands are recorded as skills (except common built-ins like `/clear`, `/compact`); if the service is down it is spawned automatically, and if that fails the recorder falls back to a direct file append — it never breaks the host agent.
+
+Known limitation: the zcode desktop's built-in agent was reported not to fire config hooks ([zai-org/feedback#32](https://github.com/zai-org/feedback/issues/32), P2, tracked); CLI sessions are unaffected.
 
 ## The data
 

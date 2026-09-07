@@ -1,6 +1,6 @@
 {
   "name": "pi-trail",
-  "version": "2.5.1",
+  "version": "2.6.0",
   "description": "Automatically record every input you type into your AI coding agents (pi, zcode, claude-code, ...) and review it as a self-writing work journal — conversations, projects, memos, reminders, and AI-powered project progress analysis. Multi-machine sync via git.",
   "keywords": [
     "pi-package",
@@ -25,13 +25,19 @@
     "extensions/",
     "public/",
     "adapters/",
+    ".claude-plugin/",
+    "hooks/",
     "server.mjs",
     "agent-core.mjs",
     "recorder.mjs",
+    "setup.mjs",
     "README.md",
     "README.en.md",
     "LICENSE"
   ],
+  "bin": {
+    "pi-trail": "setup.mjs"
+  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
   },
