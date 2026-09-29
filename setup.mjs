@@ -36,7 +36,7 @@ const HOME = homedir();
 const RUNTIME_DIR = process.env.PI_TRAIL_RUNTIME_DIR || join(HOME, ".pi", "trail", "runtime");
 const RECORDER = join(RUNTIME_DIR, "recorder.mjs").replace(/\\/g, "/");
 
-const RUNTIME_FILES = ["recorder.mjs", "agent-core.mjs", "server.mjs", "LICENSE", "README.md"];
+const RUNTIME_FILES = ["recorder.mjs", "agent-core.mjs", "server.mjs", "holidays.json", "LICENSE", "README.md"];
 const RUNTIME_DIRS = ["public"];
 
 // ---------- 通用工具 ----------

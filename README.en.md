@@ -27,7 +27,7 @@ You talk to your coding agent dozens of times a day across many projects — the
 - 🔁 **Git-backed, multi-host sync** — data lives in its own git repo (`~/.pi/trail`). Point it at any remote and multiple machines append, rebase onto each other and push automatically. Append-only JSONL + `merge=union` means concurrent appends never conflict.
 - 📅 **Calendar: memos + reminders** — a month view that places every memo and reminder on its day: pin any conversation input as a memo (plotted on its input day) or give it a due reminder (plotted on the due day, overdue highlighted in red); you can also **create memos/reminders by hand**, unrelated to any conversation, optionally tied to a project (leave empty for global). Cells show compact thumbnails only — click a day to see full entries and act on them below. Reminders offer one-click quick times (+1h / tonight / tomorrow morning / next Monday…) plus a custom date-time dialog.
 - 🤖 **AI project analysis** — one click per project: an LLM reads the project's full input history and reports its current stage, ongoing work, timeline and likely next steps. Strictly manual — no hidden API calls.
-- 📋 **Daily reports** — every workday morning the server auto-analyzes the **previous workday** (Monday covers last Friday) and writes a short 2-3 point daily report; unconfirmed cards with badge reminders, missed days can be backfilled in one click, and results sync with the data repo via git.
+- 📋 **Daily reports** — every working morning the server auto-analyzes the **previous working day** and writes a short 2-3 point daily report; the working calendar follows **China's official holiday schedule** (statutory holidays skipped, make-up weekend workdays included, the pre-holiday workday is covered on the first holiday morning), and next year's schedule can be added in `~/.pi/trail/holidays.json`; unconfirmed cards with badge reminders, missed days can be backfilled in one click, and results sync with the data repo via git.
 - 🧠 **Reuses pi's model stack** — analysis and reports resolve models straight from pi's `models.json`/`auth.json` (any provider, e.g. `thriking-v1/deepseek-v4-flash`); pick from a dropdown in ⚙ instead of typing. Config is read live on every call — nothing is written to disk, no key copies.
 - 🛡 **Local-first** — no telemetry, no cloud. The web UI binds to your LAN (configurable), data never leaves your machine unless *you* configure a git remote.
 - 🔌 **Zero-config server** — the extension auto-spawns and supervises a dependency-free Node server. It self-heals; you never manage a process.
@@ -148,7 +148,7 @@ Every project is listed with its input volume and time range. Press **🤖 分�
 
 Every workday turns into a short report automatically (**2-3 key points + involved projects + follow-ups**):
 
-- **Auto-generate** — while the server is running, at `08:30` on workdays (default; changeable via `reportTime` in ⚙ or `config.json`) it analyzes the **previous workday's** inputs (Monday → last Friday) and writes the report.
+- **Auto-generate** — while the server is running, at `08:30` on working days (default; changeable via `reportTime` in ⚙ or `config.json`) it analyzes the **previous working day's** inputs and writes the report. The working calendar follows China's official holiday schedule: statutory holidays produce no report, make-up weekend workdays are treated as regular workdays, and the first holiday morning covers the last pre-holiday workday. Years without bundled data fall back to Mon–Fri.
 - **Confirm** — a fresh report is marked *unconfirmed* (tab badge shows the count); press **✓ 确认** to archive it, **🔄 重新生成** to re-run any day.
 - **Backfill** — workdays you missed (machine was off, etc.) are listed at the top of the tab; **一键补齐** generates them one by one. You can also press **⚡ 生成昨日日报** manually.
 - **Storage** — reports live in `reports.json` (`~/.pi/trail/reports.json`) and are versioned in the data repo.
@@ -164,6 +164,7 @@ Analysis and reports **reuse pi's own model stack**: model names use the `provid
 | `PI_TRAIL_PORT` | `7799` | Web UI port |
 | `PI_TRAIL_STORE` | `~/.pi/trail` | Data directory (also used for demo/testing) |
 | `~/.pi/trail/config.json` | — | remote / branch / syncIntervalSec / autoSync / analysisModel / reportModel / reportTime |
+| `~/.pi/trail/holidays.json` | — | Custom holiday schedule (same format as the bundled `holidays.json`, merged per year: `holidays` = days off, `adjustedWorkdays` = make-up workdays); years not covered fall back to Mon–Fri; the web AI tab offers a 📥 one-click import when data is missing (a single fetch on click only, sourced from [holiday-cn](https://github.com/NateScarlet/holiday-cn), the structured version of the official gov.cn notices). **Gitignored — machine-local**; import once per machine |
 
 Upgrading from the pre-release `~/.pi/input-log`? The data directory is migrated automatically on first start.
 

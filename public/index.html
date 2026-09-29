@@ -67,6 +67,16 @@
     border-radius: 5px; padding: 2px 10px; cursor: pointer; font-size: 12px;
   }
   .reportMissing button:hover { color: var(--text); border-color: var(--text); }
+  .holidayBar {
+    background: rgba(255,184,77,.08); border: 1px solid var(--accent2); color: var(--accent2);
+    border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .holidayBar button {
+    background: var(--panel2); border: 1px solid var(--accent2); color: var(--accent2);
+    border-radius: 5px; padding: 2px 10px; cursor: pointer; font-size: 12px;
+  }
+  .holidayBar button:hover { color: var(--text); border-color: var(--text); }
   .reportCard { margin-bottom: 10px; }
   .reportCard summary { color: var(--accent); }
   /* AI 工作台卡片：按钮不用绝对定位（避免与 meta 长文本重叠），改为流式布局 */
@@ -301,6 +311,7 @@ const state = {
   calOpenDay: null, // 日历下方展开详情的日期 key（YYYY-MM-DD）
   aiTab: null, // AI tab 内的子视图："report" | "proj"，null = 首次渲染取 localStorage
   reports: { reports: {}, model: "", reportTime: "08:30", today: "", lastWorkday: "", missing: [] },
+  holidays: { covered: [], suggestImport: [] },
 };
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -331,10 +342,11 @@ let reportsRendered = false; // AI 视图首次渲染后不随轮询重建（保
 
 async function refresh() {
   try {
-    const [e, m, r] = await Promise.all([api("/api/entries"), api("/api/meta"), api("/api/reports")]);
+    const [e, m, r, h] = await Promise.all([api("/api/entries"), api("/api/meta"), api("/api/reports"), api("/api/holidays")]);
     state.entries = e.items;
     state.meta = m;
     state.reports = r;
+    state.holidays = h;
     $("#status").textContent = `共 ${e.items.length} 条 · 更新于 ${fmtTime(Date.now())}`;
     if (state.tab === "timeline" && state.view === "fish") {
       if (!fishRendered) render();
@@ -785,7 +797,7 @@ function renderAI() {
   const main = $("#main");
   const r = state.reports || { reports: {}, model: "", reportTime: "08:30", today: "", lastWorkday: "", missing: [] };
   const wd = ["日", "一", "二", "三", "四", "五", "六"][new Date().getDay()];
-  const isWd = new Date().getDay() !== 0 && new Date().getDay() !== 6;
+  const isWd = r.todayIsWorkday ?? (new Date().getDay() !== 0 && new Date().getDay() !== 6);
   const lw = r.lastWorkday || "";
   const has = r.reports[lw];
 
@@ -827,13 +839,13 @@ function renderAI() {
   }
 
   // ---------- 日报区（子 tab，默认） ----------
-  html += `<div class="introBar">📋 每日日报 — 工作日早上 ${esc(r.reportTime)} 自动分析上个工作日，周一分析上周五。模型：<b>${esc(r.model || "?")}</b>（⚙ 里可换，支持 pi 的 provider/model 格式）</div>`;
+  html += `<div class="introBar">📋 每日日报 — 上班日早上 ${esc(r.reportTime)} 自动分析上一个上班日（按国务院放假安排：法定节假日跳过、调休上班日照常，假期首日早晨补节前日报）。模型：<b>${esc(r.model || "?")}</b>（⚙ 里可换，支持 pi 的 provider/model 格式）</div>`;
 
   // 最近工作日状态条
   if (lw) {
     html += `<div class="entry projCard aiCard reportToday ${has && !has.confirmed ? "unconfirmed" : ""}">
       <div class="meta">
-        <span>${isWd ? `今日周${wd}` : "今天周末"}</span>
+        <span>${isWd ? `今日上班（周${wd}）` : `今天休息（周${wd}）`}</span>
         <span>最近工作日：<b>${lw}</b></span>
         <span>${has ? `日报已生成（${has.inputCount} 条输入）${has.confirmed ? " · ✓ 已确认" : " · 待确认"}` : "日报未生成"}</span>
       </div>
@@ -843,9 +855,15 @@ function renderAI() {
     </div>`;
   }
 
-  // 缺失补跑提示（最近 10 天）
+  // 缺失补跑提示（最近 15 天）
   if (r.missing && r.missing.length) {
-    html += `<div class="reportMissing">⚠ 最近 10 天有 <b>${r.missing.length}</b> 个工作日缺少日报：${r.missing.map(esc).join("、")} <button class="reportGenMissing">一键补齐</button></div>`;
+    html += `<div class="reportMissing">⚠ 最近 15 天有 <b>${r.missing.length}</b> 个上班日缺少日报：${r.missing.map(esc).join("、")} <button class="reportGenMissing">一键补齐</button></div>`;
+  }
+
+  // 放假安排导入提示（仅缺数据时显示；导入只在点击时联网一次）
+  const hol = state.holidays || {};
+  if (hol.suggestImport && hol.suggestImport.length) {
+    html += `<div class="holidayBar">📅 放假安排缺少 ${hol.suggestImport.map(esc).join("、")} 年数据（该年按周一至五处理）${hol.suggestImport.map((y) => `<button class="holidayImport" data-year="${esc(y)}">📥 导入 ${esc(y)}</button>`).join("")}</div>`;
   }
 
   // 日报卡片（倒序）
@@ -1117,6 +1135,20 @@ $("#main").addEventListener("click", async (ev) => {
       }
     }
     if (!failed) state.reports.missing = state.reports.missing.filter((d) => !missing.includes(d));
+    renderAI();
+    return;
+  }
+  if (btn && btn.classList.contains("holidayImport")) {
+    const year = btn.dataset.year;
+    btn.disabled = true;
+    btn.textContent = `⏳ 导入 ${year} 中…`;
+    try {
+      const h = await api("/api/holidays/import", { year });
+      if (h && h.error) throw new Error(h.error);
+      state.holidays = h;
+    } catch (e) {
+      alert("导入失败：" + (e && e.message ? e.message : e));
+    }
     renderAI();
     return;
   }

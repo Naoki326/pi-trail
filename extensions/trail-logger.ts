@@ -91,7 +91,7 @@ function spawnServer() {
   });
   child.unref();
   try {
-    appendFileSync(PID_FILE, String(child.pid));
+    writeFileSync(PID_FILE, String(child.pid)); // 覆盖写：只记最新一次拉起的进程，供 killStaleByPidFile 清僵尸
   } catch {
     /* pid 登记失败不影响运行 */
   }

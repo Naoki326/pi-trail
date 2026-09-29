@@ -20,7 +20,7 @@ import { homedir, hostname, networkInterfaces } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile, execFileSync } from "node:child_process";
-import { buildEntry, classifyInput, getMachineId as getLocalMachineId } from "./agent-core.mjs";
+import { buildEntry, classifyInput, getMachineId as getLocalMachineId, dayStr, isWorkday, prevWorkday, workdaysInRange, coveredHolidayYears, resetHolidayCache } from "./agent-core.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STORE_DIR = process.env.PI_TRAIL_STORE || join(homedir(), ".pi", "trail");
@@ -46,6 +46,12 @@ const PORT = (() => {
     return Number(process.env.PI_TRAIL_PORT || process.env.PI_INPUT_LOG_PORT);
   return 7799;
 })();
+
+// 监听地址。默认仅回环：本服务不鉴权，必须由统一入口（nginx，带 HTTPS +
+// Basic Auth）反向代理暴露，不能自己裸监到内网。
+// 需要局域网直连时显式设 PI_TRAIL_HOST=0.0.0.0（不推荐）。
+// 2026-09-13 由 0.0.0.0 收敛为 127.0.0.1（原先内网可绕过统一入口直连）。
+const HOST = process.env.PI_TRAIL_HOST || "127.0.0.1";
 
 // ---------- 配置 ----------
 
@@ -239,7 +245,7 @@ function gitData(args) {
 let repoOk = false;
 let lastSync = { at: 0, ok: null, error: "" };
 
-const GITIGNORE = "*.log\nserver.pid\nconfig.json\nmeta.json.migrated\nruntime/\n";
+const GITIGNORE = "*.log\nserver.pid\nconfig.json\nmeta.json.migrated\nruntime/\nholidays.json\n"; // holidays.json：一键导入的产物属本机数据，gitignored 不同步（各机器自行导入，成本≈0）
 const GITATTR = "entries.jsonl merge=union\nmeta.jsonl merge=union\n";
 
 function writeTextIfChanged(p, content) {
@@ -674,34 +680,15 @@ ${lines}
 
 const pad2 = (n) => String(n).padStart(2, "0");
 
-function dayStr(ts) {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
+// isWorkday / prevWorkday / workdaysInRange / dayStr 见 agent-core.mjs（按国务院放假安排）
 
-function isWorkday(ds) {
-  const w = new Date(`${ds}T00:00:00`).getDay();
-  return w >= 1 && w <= 5;
-}
-
-// 给定日期往前找最近的工作日（当天不计；周一 → 上周五）
-function prevWorkday(ds) {
-  const d = new Date(`${ds}T00:00:00`);
-  d.setDate(d.getDate() - 1);
-  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
-  return dayStr(d.getTime());
-}
-
-// [from, to] 含两端的工作日列表
-function workdaysInRange(fromDs, toDs) {
-  const out = [];
-  const d = new Date(`${fromDs}T00:00:00`);
-  const end = new Date(`${toDs}T00:00:00`);
-  while (d <= end) {
-    if (d.getDay() >= 1 && d.getDay() <= 5) out.push(dayStr(d.getTime()));
-    d.setDate(d.getDate() + 1);
-  }
-  return out;
+// 放假安排状态：已覆盖年份（内置 + 用户扩展合并）+ 建议导入的年份
+function holidaysStatus() {
+  const covered = coveredHolidayYears();
+  const now = new Date();
+  const wanted = [String(now.getFullYear())];
+  if (now.getMonth() >= 9) wanted.push(String(now.getFullYear() + 1)); // 10 月起提示次年（安排通常 11-12 月公布）
+  return { covered, suggestImport: wanted.filter((y) => !covered.includes(y)) };
 }
 
 function loadReports() {
@@ -715,12 +702,12 @@ function saveReports(r) {
   writeFileSync(REPORTS_FILE, JSON.stringify(r, null, 2), "utf8");
 }
 
-// 最近 10 个自然日内、今天之前、缺少日报的工作日
+// 最近 15 个自然日内（长假 + 请假也不漏）、今天之前、缺少日报的工作日
 function missingWorkdays() {
   const today = dayStr(Date.now());
   const store = loadReports();
   const d = new Date(`${today}T00:00:00`);
-  d.setDate(d.getDate() - 10);
+  d.setDate(d.getDate() - 15);
   return workdaysInRange(dayStr(d.getTime()), today).filter((ds) => ds < today && !store[ds]);
 }
 
@@ -773,19 +760,25 @@ ${projects.map((p) => `- ${p}`).join("\n")}
   return store[day];
 }
 
-// 工作日早上自动生成昨日日报；错过不补（页面提供手动补齐），避免隐藏消耗
+// 日报调度（按国务院放假安排）：调休上班的周末照常生成；法定节假日早晨也跑——
+// 假期首日生成节前最后工作日的日报，其余假期早晨发现已生成即跳过；普通周六日不跑。
+// 错过不补（页面提供手动补齐），避免隐藏消耗。
 function startReportTimer() {
   setInterval(async () => {
     try {
       const cfg = loadConfig();
       const now = new Date();
-      if (now.getDay() === 0 || now.getDay() === 6) return; // 周末不自动生成
+      const today = dayStr(now.getTime());
+      const w = now.getDay();
+      if ((w === 0 || w === 6) && !isWorkday(today)) return; // 普通周末不自动生成
       const [h, m] = (cfg.reportTime || "08:30").split(":").map(Number);
       const cur = now.getHours() * 60 + now.getMinutes();
       const target = (h || 8) * 60 + (m || 30);
       if (cur < target) return; // 未到生成时刻
-      const targetDay = prevWorkday(dayStr(now.getTime()));
+      const targetDay = prevWorkday(today);
       if (loadReports()[targetDay]) return; // 已生成过
+      const d0 = new Date(`${targetDay}T00:00:00`).getTime();
+      if (!loadEntries().some((e) => e.ts >= d0 && e.ts < d0 + 86400000)) return; // 当日无输入：无日报可生成，避免整天空转重试
       console.log(`[pi-trail] 自动生成 ${targetDay} 的日报`);
       await runReport(targetDay);
       console.log(`[pi-trail] ${targetDay} 日报已生成`);
@@ -971,6 +964,7 @@ const server = createServer(async (req, res) => {
         model: cfg.reportModel || cfg.analysisModel || "stealth/ox-alpha",
         reportTime: cfg.reportTime || "08:30",
         today,
+        todayIsWorkday: isWorkday(today),
         lastWorkday: prevWorkday(today),
         missing: missingWorkdays(),
       });
@@ -998,6 +992,41 @@ const server = createServer(async (req, res) => {
       return json(res, 200, store[b.day]);
     }
 
+    // 放假安排：GET /api/holidays → 已覆盖年份 + 建议导入（当年；次年仅 10 月起提示——安排通常 11-12 月公布）
+    if (req.method === "GET" && p === "/api/holidays") {
+      return json(res, 200, holidaysStatus());
+    }
+
+    // 一键导入放假安排：显式点击才联网（一次），源 holiday-cn（gov.cn 官方通知的结构化版），写入用户扩展 holidays.json
+    if (req.method === "POST" && p === "/api/holidays/import") {
+      const b = await readBody(req);
+      const year = String((b && b.year) || "");
+      if (!/^\d{4}$/.test(year)) return json(res, 400, { error: "year 需为 4 位年份数字" });
+      let data;
+      try {
+        const r = await fetch(`https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/${year}.json`, { signal: AbortSignal.timeout(10000) });
+        if (r.status === 404) return json(res, 404, { error: `${year} 年安排尚未发布（通常前一年 11-12 月公布），请稍后再试` });
+        if (!r.ok) return json(res, 502, { error: `上游返回 HTTP ${r.status}` });
+        data = await r.json();
+      } catch {
+        return json(res, 502, { error: "网络不可达 — 本功能仅在点击时联网一次，稍后可重试" });
+      }
+      const days = Array.isArray(data && data.days) ? data.days : [];
+      const dateOk = (d) => typeof d === "string" && new RegExp(`^${year}-\\d{2}-\\d{2}$`).test(d);
+      const holidays = days.filter((x) => x && x.isOffDay === true && dateOk(x.date)).map((x) => x.date);
+      const adjustedWorkdays = days.filter((x) => x && x.isOffDay === false && dateOk(x.date)).map((x) => x.date);
+      if (!holidays.length || holidays.length + adjustedWorkdays.length !== days.length)
+        return json(res, 502, { error: "上游数据格式异常，未写入" });
+      const userFile = join(STORE_DIR, "holidays.json");
+      let user = {};
+      try { user = JSON.parse(readFileSync(userFile, "utf8")); } catch { /* 无文件或损坏则重建 */ }
+      if (!user || typeof user !== "object" || Array.isArray(user)) user = {};
+      user[year] = { holidays, adjustedWorkdays };
+      writeFileSync(userFile, JSON.stringify(user, null, 2) + "\n", "utf8");
+      resetHolidayCache(); // 导入后立即生效，无需重启
+      return json(res, 200, holidaysStatus());
+    }
+
     if (req.method === "GET" && p === "/api/ping") {
       return json(res, 200, { ok: true });
     }
@@ -1009,11 +1038,15 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, "0.0.0.0", () => {
+server.listen(PORT, HOST, () => {
   console.log(`[pi-trail] http://localhost:${PORT}`);
-  for (const nets of Object.values(networkInterfaces())) {
-    for (const n of nets || []) {
-      if (n.family === "IPv4" && !n.internal) console.log(`[pi-trail] 内网访问： http://${n.address}:${PORT}`);
+  if (HOST === "127.0.0.1" || HOST === "::1" || HOST === "localhost") {
+    console.log(`[pi-trail] 仅监听回环（${HOST}），需经统一入口反向代理访问`);
+  } else {
+    for (const nets of Object.values(networkInterfaces())) {
+      for (const n of nets || []) {
+        if (n.family === "IPv4" && !n.internal) console.log(`[pi-trail] 内网访问： http://${n.address}:${PORT}`);
+      }
     }
   }
   console.log(`[pi-trail] store: ${ENTRIES_FILE}`);
