@@ -795,7 +795,7 @@ const server = createServer(async (req, res) => {
   try {
     if (req.method === "GET" && (p === "/" || p === "/index.html")) {
       const html = readFileSync(join(__dirname, "public", "index.html"));
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" }); // 无缓存头时浏览器启发式缓存旧页面，更新后"看起来没变"
       return res.end(html);
     }
 
