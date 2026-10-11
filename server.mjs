@@ -1101,6 +1101,7 @@ const server = createServer(async (req, res) => {
         return json(res, 502, { error: "上游返回的不是合法 JSON" });
       }
       const days = Array.isArray(data && data.days) ? data.days : [];
+      if (!days.length) return json(res, 404, { error: `${year} 年安排尚未发布（上游为空占位文件，通常前一年 11-12 月公布后自动可用），请稍后再试` });
       const dateOk = (d) => typeof d === "string" && new RegExp(`^${year}-\\d{2}-\\d{2}$`).test(d);
       const holidays = days.filter((x) => x && x.isOffDay === true && dateOk(x.date)).map((x) => x.date);
       const adjustedWorkdays = days.filter((x) => x && x.isOffDay === false && dateOk(x.date)).map((x) => x.date);
