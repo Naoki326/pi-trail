@@ -164,7 +164,7 @@ curl -X POST http://localhost:7799/api/record \
 |---|---|---|
 | `PI_TRAIL_PORT` | `7799` | 网页端口 |
 | `PI_TRAIL_STORE` | `~/.pi/trail` | 数据目录（演示/测试可覆盖） |
-| `~/.pi/trail/config.json` | — | remote / branch / syncIntervalSec / autoSync / analysisModel / reportModel / reportTime |
+| `~/.pi/trail/config.json` | — | remote / branch / syncIntervalSec / autoSync / analysisModel / reportModel / reportTime / proxy（导入放假安排用的上游代理，留空直连） |
 | `~/.pi/trail/holidays.json` | — | 自定义放假安排（同内置 `holidays.json` 格式，按年覆盖/补充：`holidays`=放假日期，`adjustedWorkdays`=调休上班日）；未覆盖年份按周一至五；⚙ 设置对话框提供 📥 一键导入（仅点击时联网一次，源 [holiday-cn](https://github.com/NateScarlet/holiday-cn)，即 gov.cn 官方通知的结构化版）。**gitignored，仅本机生效**——多机使用时各机器分别导入 |
 
 服务监听 `0.0.0.0`，局域网内手机可直接访问；首次运行放行防火墙即可。**无鉴权**——仅限可信内网使用。

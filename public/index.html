@@ -287,6 +287,9 @@
         <button id="cfgHolImport" style="display:none"></button>
       </div>
     </label>
+    <label>上游代理（导入放假安排用，如 http://127.0.0.1:7890，留空直连）
+      <input id="cfgProxy" type="text" placeholder="http://127.0.0.1:7890" style="width:100%;margin-top:4px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px">
+    </label>
     <button id="syncNowBtn" style="align-self:flex-start">立即同步</button>
     <div id="syncStatus" style="font-size:12px;color:var(--dim)"></div>
   </div>
@@ -1349,6 +1352,7 @@ $("#settingsBtn").addEventListener("click", async () => {
   $("#cfgInterval").value = cfg.syncIntervalSec ?? 120;
   $("#cfgAuto").checked = cfg.autoSync !== false;
   $("#cfgReportTime").value = cfg.reportTime || "08:30";
+  $("#cfgProxy").value = cfg.proxy || "";
   $("#syncStatus").textContent = fmtSync(cfg.lastSync);
   renderCfgHolidays();
   $("#settingsDlg").showModal();
@@ -1362,6 +1366,7 @@ $("#cfgSave").addEventListener("click", async () => {
     analysisModel: $("#cfgModel").value.trim(),
     reportModel: $("#cfgReportModel").value.trim(),
     reportTime: $("#cfgReportTime").value,
+    proxy: $("#cfgProxy").value.trim(),
   });
   $("#syncStatus").textContent = "已保存 · " + fmtSync(cfg.lastSync);
 });

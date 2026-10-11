@@ -14,7 +14,9 @@
  * 启动：node server.mjs [--port 7799]（正常由扩展自动拉起）
  * 页面：http://localhost:7799
  */
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import tls from "node:tls";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, readdirSync } from "node:fs";
 import { homedir, hostname, networkInterfaces } from "node:os";
 import { join, dirname } from "node:path";
@@ -64,7 +66,7 @@ const HOST = process.env.PI_TRAIL_HOST || "127.0.0.1";
 
 // ---------- 配置 ----------
 
-const CONFIG_DEFAULTS = { remote: "", branch: "main", syncIntervalSec: 120, autoSync: true, analysisModel: "stealth/ox-alpha", reportModel: "", reportTime: "08:30" };
+const CONFIG_DEFAULTS = { remote: "", branch: "main", syncIntervalSec: 120, autoSync: true, analysisModel: "stealth/ox-alpha", reportModel: "", reportTime: "08:30", proxy: "" };
 
 function loadConfig() {
   try {
@@ -691,6 +693,78 @@ const pad2 = (n) => String(n).padStart(2, "0");
 
 // isWorkday / prevWorkday / workdaysInRange / dayStr 见 agent-core.mjs（按国务院放假安排）
 
+// ---------- 上游请求（放假安排导入用，代理优先级：cfg.proxy > PI_TRAIL_PROXY > HTTPS_PROXY/HTTP_PROXY） ----------
+
+function resolveProxyUrl() {
+  const cfg = loadConfig();
+  return String(cfg.proxy || process.env.PI_TRAIL_PROXY || process.env.HTTPS_PROXY || process.env.HTTP_PROXY || "").trim();
+}
+
+// 零依赖代理隧道：https 目标先向代理发 CONNECT 再 TLS（http 目标由代理直转）；未配代理时退回全局 fetch。
+// 返回类 fetch 的 { status, text() }。
+function fetchUpstream(urlStr, timeoutMs = 10000) {
+  const proxy = resolveProxyUrl();
+  if (!proxy) return fetch(urlStr, { signal: AbortSignal.timeout(timeoutMs) });
+  const target = new URL(urlStr);
+  const purl = new URL(proxy);
+  const proxyHeaders = purl.username
+    ? { "proxy-authorization": "Basic " + Buffer.from(`${decodeURIComponent(purl.username)}:${decodeURIComponent(purl.password || "")}`).toString("base64") }
+    : {};
+  return new Promise((resolve, reject) => {
+    if (target.protocol === "http:") {
+      const r = httpRequest(
+        { host: purl.hostname, port: Number(purl.port) || 80, path: urlStr, headers: { ...proxyHeaders, host: target.hostname, "user-agent": "pi-trail", accept: "application/json" }, timeout: timeoutMs },
+        (ires) => {
+          const chunks = [];
+          ires.on("data", (c) => chunks.push(c));
+          ires.on("end", () => resolve({ status: ires.statusCode, text: () => Buffer.concat(chunks).toString("utf8") }));
+        },
+      );
+      r.on("timeout", () => r.destroy(new Error("代理请求超时")));
+      r.on("error", reject);
+      r.end();
+      return;
+    }
+    const connect = httpRequest({
+      host: purl.hostname,
+      port: Number(purl.port) || 80,
+      method: "CONNECT",
+      path: `${target.hostname}:443`,
+      headers: proxyHeaders,
+      timeout: timeoutMs,
+    });
+    connect.on("connect", (cres, socket, head) => {
+      if (cres.statusCode !== 200) {
+        socket.destroy();
+        return reject(new Error(`代理拒绝 CONNECT：HTTP ${cres.statusCode}`));
+      }
+      if (head && head.length) socket.unshift(head); // 极少见：CONNECT 响应后已到的字节塞回
+      socket.pause(); // 挂 TLS 前先停流，防止握手首包丢失
+      const inner = httpsRequest(
+        {
+          createConnection: () => tls.connect({ socket, servername: target.hostname }),
+          method: "GET",
+          host: target.hostname,
+          path: target.pathname + target.search,
+          headers: { host: target.hostname, "user-agent": "pi-trail", accept: "application/json" },
+          timeout: timeoutMs,
+        },
+        (ires) => {
+          const chunks = [];
+          ires.on("data", (c) => chunks.push(c));
+          ires.on("end", () => resolve({ status: ires.statusCode, text: () => Buffer.concat(chunks).toString("utf8") }));
+        },
+      );
+      inner.on("timeout", () => inner.destroy(new Error("上游响应超时")));
+      inner.on("error", reject);
+      inner.end();
+    });
+    connect.on("timeout", () => connect.destroy(new Error("代理连接超时")));
+    connect.on("error", reject);
+    connect.end();
+  });
+}
+
 // 放假安排状态：已覆盖年份（内置 + 用户扩展合并）+ 建议导入的年份 + 日期级数据（月历渲染用）
 function holidaysStatus() {
   const covered = coveredHolidayYears();
@@ -908,6 +982,7 @@ const server = createServer(async (req, res) => {
         if (typeof b.analysisModel === "string" && b.analysisModel.trim()) cfg.analysisModel = b.analysisModel.trim();
         if (typeof b.reportModel === "string" && b.reportModel.trim()) cfg.reportModel = b.reportModel.trim();
         if (typeof b.reportTime === "string" && /^\d{1,2}:\d{2}$/.test(b.reportTime.trim())) cfg.reportTime = b.reportTime.trim();
+        if (typeof b.proxy === "string") cfg.proxy = /^https?:\/\/\S+$/.test(b.proxy.trim()) ? b.proxy.trim() : "";
         saveConfig(cfg);
         queueSync(1000);
         return json(res, 200, { ...cfg, lastSync });
@@ -1012,13 +1087,18 @@ const server = createServer(async (req, res) => {
       const year = String((b && b.year) || "");
       if (!/^\d{4}$/.test(year)) return json(res, 400, { error: "year 需为 4 位年份数字" });
       let data;
+      let r;
       try {
-        const r = await fetch(`https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/${year}.json`, { signal: AbortSignal.timeout(10000) });
-        if (r.status === 404) return json(res, 404, { error: `${year} 年安排尚未发布（通常前一年 11-12 月公布），请稍后再试` });
-        if (!r.ok) return json(res, 502, { error: `上游返回 HTTP ${r.status}` });
-        data = await r.json();
+        r = await fetchUpstream(`https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/${year}.json`, 10000);
+      } catch (e) {
+        return json(res, 502, { error: `网络不可达（${(e && e.message) || "无详情"}）— 可在 ⚙ 配置上游代理后重试；本功能仅在点击时联网一次` });
+      }
+      if (r.status === 404) return json(res, 404, { error: `${year} 年安排尚未发布（通常前一年 11-12 月公布），请稍后再试` });
+      if (r.status !== 200) return json(res, 502, { error: `上游返回 HTTP ${r.status}` });
+      try {
+        data = JSON.parse(await r.text());
       } catch {
-        return json(res, 502, { error: "网络不可达 — 本功能仅在点击时联网一次，稍后可重试" });
+        return json(res, 502, { error: "上游返回的不是合法 JSON" });
       }
       const days = Array.isArray(data && data.days) ? data.days : [];
       const dateOk = (d) => typeof d === "string" && new RegExp(`^${year}-\\d{2}-\\d{2}$`).test(d);
