@@ -30,7 +30,7 @@ You talk to your coding agent dozens of times a day across many projects — the
 - 📋 **Daily reports** — every working morning the server auto-analyzes the **previous working day** and writes a short 2-3 point daily report; the working calendar follows **China's official holiday schedule** (statutory holidays skipped, make-up weekend workdays included, the pre-holiday workday is covered on the first holiday morning), and next year's schedule can be added in `~/.pi/trail/holidays.json`; unconfirmed cards with badge reminders, missed days can be backfilled in one click, and results sync with the data repo via git.
 - 🧠 **Reuses pi's model stack** — analysis and reports resolve models straight from pi's `models.json`/`auth.json` (any provider, e.g. `thriking-v1/deepseek-v4-flash`); pick from a dropdown in ⚙ instead of typing. Config is read live on every call — nothing is written to disk, no key copies.
 - 🛡 **Local-first** — no telemetry, no cloud. The web UI binds to your LAN (configurable), data never leaves your machine unless *you* configure a git remote.
-- 🔌 **Zero-config server** — the extension auto-spawns and supervises a dependency-free Node server. It self-heals; you never manage a process.
+- 🔌 **Zero-config server** — the extension auto-spawns and supervises a dependency-free Node server. It self-heals; you never manage a process. Multiple entrypoints (the pi extension and per-agent hooks) arbitrate the singleton server by version: newer code automatically takes over an older running instance, so updating from either side takes effect immediately.
 
 ![tree view](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-tree.png)
 

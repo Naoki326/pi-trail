@@ -31,7 +31,7 @@ pi trail 是一个 [pi](https://github.com/earendil-works/pi-coding-agent) 插�
 - 📋 **每日日报**——每个上班日早上自动分析上一个上班日的全部输入，生成 2-3 条简短日报；工作日历按**国务院放假安排**（法定节假日跳过、调休上班的周末照常，假期首日早晨补节前日报），次年安排可在 `~/.pi/trail/holidays.json` 自行补充；待确认卡片 + 徽标提醒，错过的日期可一键补齐，结果随数据仓库 git 同步。
 - 🧠 **复用 pi 的模型配置**——AI 分析与日报直接使用 pi 的 `models.json`/`auth.json` 模型体系（支持任意 provider，如 `thriking-v1/deepseek-v4-flash`），⚙ 设置里下拉选择，无需手填模型名；每次调用时实时读取 pi 配置，不落盘不拷贝 key。
 - 🛡 **本地优先**——无遥测、无云端。网页只绑定你的局域网（可配置），数据不经你配置的 git remote 绝不出你的机器。
-- 🔌 **零配置服务**——扩展自动拉起并守护一个零依赖 Node 服务，挂了自动拉回，你永远不用管进程。
+- 🔌 **零配置服务**——扩展自动拉起并守护一个零依赖 Node 服务，挂了自动拉回，你永远不用管进程。多入口（pi 扩展与各 agent 钩子）对单例服务做**版本仲裁**：较新的代码自动接管较旧的运行实例，从任何一侧更新都即刻生效。
 
 ![tree view](https://raw.githubusercontent.com/Naoki326/pi-trail/main/docs/screenshot-tree.png)
 

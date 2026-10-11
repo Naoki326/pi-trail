@@ -202,6 +202,40 @@ export async function pingServer(port) {
   }
 }
 
+// ---------- 单例接管（服务是端口单例，多个入口各自带代码副本拉起；版本仲裁让"新的赶走旧的"） ----------
+
+// 本地代码版本（读自身目录 package.json；无版本信息的旧环境按 0 处理）
+export function getOwnVersion() {
+  try {
+    return JSON.parse(readFileSync(join(CORE_DIR, "package.json"), "utf8")).version || "0";
+  } catch {
+    return "0";
+  }
+}
+
+// 语义化版本比较：a<b 返回 -1，相等 0，a>b 返回 1（缺位补 0）
+export function cmpVersion(a, b) {
+  const pa = String(a || "0").split(".").map(Number);
+  const pb = String(b || "0").split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return Math.sign(d);
+  }
+  return 0;
+}
+
+// 运行中服务自报的版本；旧版服务（无 version 字段）返回 null，按 0（远古）处理
+export async function fetchServerVersion(port) {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/ping`, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j && j.version ? String(j.version) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function spawnServer(opts = {}) {
   const storeDir = opts.storeDir || defaultStoreDir();
   const port = opts.port || resolvePort();
@@ -255,7 +289,17 @@ export async function ensureServer(opts = {}) {
   if (ensuring) return pingServer(port);
   ensuring = true;
   try {
-    if (await pingServer(port)) return true;
+    if (await pingServer(port)) {
+      // 版本接管：运行中的服务比本地代码旧（含不自报版本的旧版）→ 杀掉换新，更新即生效
+      const remote = (await fetchServerVersion(port)) ?? "0";
+      if (cmpVersion(getOwnVersion(), remote) > 0) {
+        killStaleByPidFile(opts.storeDir);
+        await sleep(500);
+        spawnServer(opts);
+        return waitPing(port, 8, 500);
+      }
+      return true;
+    }
     spawnServer(opts);
     if (await waitPing(port, 8, 500)) return true;
     killStaleByPidFile(opts.storeDir);

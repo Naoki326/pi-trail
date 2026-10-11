@@ -81,6 +81,38 @@ async function pingServer(): Promise<boolean> {
   }
 }
 
+// ---------- 单例接管（与 agent-core.mjs 同一套逻辑的扩展侧副本） ----------
+
+function getOwnVersion(): string {
+  try {
+    return JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")).version || "0";
+  } catch {
+    return "0";
+  }
+}
+
+function cmpVersion(a: string, b: string): number {
+  const pa = String(a || "0").split(".").map(Number);
+  const pb = String(b || "0").split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return Math.sign(d);
+  }
+  return 0;
+}
+
+// 运行中服务自报的版本；旧版服务（无 version 字段）返回 null，按 0（远古）处理
+async function fetchServerVersion(): Promise<string | null> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${PORT}/api/ping`, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j && j.version ? String(j.version) : null;
+  } catch {
+    return null;
+  }
+}
+
 function spawnServer() {
   mkdirSync(STORE_DIR, { recursive: true });
   const log = openSync(SERVER_LOG, "a");
@@ -119,7 +151,17 @@ async function ensureServer() {
   if (ensuring) return;
   ensuring = true;
   try {
-    if (await pingServer()) return;
+    if (await pingServer()) {
+      // 版本接管：运行中的服务比本地代码旧（含不自报版本的旧版）→ 杀掉换新，更新即生效
+      const remote = (await fetchServerVersion()) ?? "0";
+      if (cmpVersion(getOwnVersion(), remote) > 0) {
+        killStaleByPidFile();
+        await sleep(500);
+        spawnServer();
+        await sleep(2000);
+      }
+      return;
+    }
     spawnServer();
     await sleep(2000);
     if (await pingServer()) return;

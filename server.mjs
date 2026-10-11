@@ -39,6 +39,15 @@ const OLD_META_FILE = join(STORE_DIR, "meta.json");
 const CONFIG_FILE = join(STORE_DIR, "config.json");
 const REPORTS_FILE = join(STORE_DIR, "reports.json");
 
+// 自报版本（ensureServer 由此做单例接管仲裁：较新的拉起者替换较旧的运行实例）
+const VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(join(__dirname, "package.json"), "utf8")).version || "0";
+  } catch {
+    return "0";
+  }
+})();
+
 const PORT = (() => {
   const i = process.argv.indexOf("--port");
   if (i > -1 && Number(process.argv[i + 1])) return Number(process.argv[i + 1]);
@@ -1028,7 +1037,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && p === "/api/ping") {
-      return json(res, 200, { ok: true });
+      return json(res, 200, { ok: true, version: VERSION });
     }
 
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
@@ -1039,7 +1048,7 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`[pi-trail] http://localhost:${PORT}`);
+  console.log(`[pi-trail] v${VERSION} http://localhost:${PORT}`);
   if (HOST === "127.0.0.1" || HOST === "::1" || HOST === "localhost") {
     console.log(`[pi-trail] 仅监听回环（${HOST}），需经统一入口反向代理访问`);
   } else {
