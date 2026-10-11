@@ -20,7 +20,7 @@ import { homedir, hostname, networkInterfaces } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile, execFileSync } from "node:child_process";
-import { buildEntry, classifyInput, getMachineId as getLocalMachineId, dayStr, isWorkday, prevWorkday, workdaysInRange, coveredHolidayYears, resetHolidayCache } from "./agent-core.mjs";
+import { buildEntry, classifyInput, getMachineId as getLocalMachineId, dayStr, isWorkday, prevWorkday, workdaysInRange, coveredHolidayYears, holidayDaysByYear, resetHolidayCache } from "./agent-core.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STORE_DIR = process.env.PI_TRAIL_STORE || join(homedir(), ".pi", "trail");
@@ -682,13 +682,13 @@ const pad2 = (n) => String(n).padStart(2, "0");
 
 // isWorkday / prevWorkday / workdaysInRange / dayStr 见 agent-core.mjs（按国务院放假安排）
 
-// 放假安排状态：已覆盖年份（内置 + 用户扩展合并）+ 建议导入的年份
+// 放假安排状态：已覆盖年份（内置 + 用户扩展合并）+ 建议导入的年份 + 日期级数据（月历渲染用）
 function holidaysStatus() {
   const covered = coveredHolidayYears();
   const now = new Date();
   const wanted = [String(now.getFullYear())];
   if (now.getMonth() >= 9) wanted.push(String(now.getFullYear() + 1)); // 10 月起提示次年（安排通常 11-12 月公布）
-  return { covered, suggestImport: wanted.filter((y) => !covered.includes(y)) };
+  return { covered, suggestImport: wanted.filter((y) => !covered.includes(y)), years: holidayDaysByYear() };
 }
 
 function loadReports() {

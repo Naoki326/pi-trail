@@ -167,6 +167,11 @@
   .calDayBtn:hover { color: var(--text); }
   .calCell.today .calDayBtn { color: var(--accent); font-weight: 700; }
   .calCellHead .cnt { color: var(--accent2); font-size: 11px; }
+  .calCell.hol { background: rgba(229,83,75,.05); }
+  .calCell.adj { background: rgba(255,184,77,.06); }
+  .calMark { font-size: 10px; line-height: 1; border-radius: 3px; padding: 1px 3px; font-weight: 700; }
+  .calMark.hol { color: var(--danger); border: 1px solid var(--danger); }
+  .calMark.adj { color: var(--accent2); border: 1px solid var(--accent2); }
   .calEv { flex: none; display: block; width: 100%; text-align: left; background: var(--panel2); border: none; border-left: 3px solid var(--accent2); border-radius: 4px; color: var(--dim); font: inherit; font-size: 11px; line-height: 1.5; padding: 1px 5px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .calEv:hover { color: var(--text); }
   .calEv.remind { border-left-color: var(--danger); }
@@ -752,6 +757,10 @@ function renderCalendar() {
   const daysInMonth = new Date(y, m + 1, 0).getDate();
   const todayKey = fmtDate(today.getTime());
   const byDay = calEventsByDay();
+  // 放假安排标记（该年份无数据则不标，与后端回退语义一致）
+  const holYear = (state.holidays?.years || {})[String(y)] || {};
+  const holSet = new Set(holYear.holidays || []);
+  const adjSet = new Set(holYear.adjustedWorkdays || []);
 
   const wd = ["一", "二", "三", "四", "五", "六", "日"];
   let cells = wd.map((d) => `<div class="calHead">周${d}</div>`).join("");
@@ -762,8 +771,9 @@ function renderCalendar() {
     const items = byDay.get(key) || [];
     const shown = items.slice(0, MAX_SHOW);
     const more = items.length - shown.length;
-    cells += `<div class="calCell ${key === todayKey ? "today" : ""} ${key === state.calOpenDay ? "open" : ""}" data-day="${key}">
-      <div class="calCellHead"><button class="calDayBtn" data-day="${key}" title="展开这一天">${d}</button>${items.length ? `<span class="cnt">${items.length}</span>` : ""}</div>
+    const mark = adjSet.has(key) ? `<span class="calMark adj" title="调休上班">班</span>` : holSet.has(key) ? `<span class="calMark hol" title="法定节假日">休</span>` : "";
+    cells += `<div class="calCell ${adjSet.has(key) ? "adj" : ""} ${holSet.has(key) ? "hol" : ""} ${key === todayKey ? "today" : ""} ${key === state.calOpenDay ? "open" : ""}" data-day="${key}">
+      <div class="calCellHead"><button class="calDayBtn" data-day="${key}" title="展开这一天">${d}</button>${mark}${items.length ? `<span class="cnt">${items.length}</span>` : ""}</div>
       ${shown.map((it) => calEvHtml(key, it)).join("")}
       ${more > 0 ? `<button class="calMore calDayBtn" data-day="${key}">+${more} 更多</button>` : ""}
     </div>`;
@@ -786,7 +796,7 @@ function renderCalendar() {
       <button class="calNav" data-d="1" title="下个月">▶</button>
       <button class="calNav calTodayBtn">今天</button>
       <button class="calNav calAddBtn" title="新建备忘/提醒（可关联项目，可设提醒时间）">➕ 添加</button>
-      <span class="calLegend">📌 备忘（按输入日） · ⏰ 提醒（按到期日） · 点击日期或事件看详情</span>
+      <span class="calLegend">📅 休=法定节假日 · 班=调休上班 · 📌 备忘（按输入日） · ⏰ 提醒（按到期日） · 点击日期或事件看详情</span>
     </div>
     <div class="calGrid">${cells}</div>
     ${openHtml}`;

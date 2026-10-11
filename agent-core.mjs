@@ -182,6 +182,15 @@ export function coveredHolidayYears() {
   return Object.keys(loadHolidayYears()).sort();
 }
 
+// 日期级数据（API 透出给前端，月历渲染「休/班」标记用）
+export function holidayDaysByYear() {
+  const out = {};
+  for (const [y, d] of Object.entries(loadHolidayYears())) {
+    out[y] = { holidays: [...d.holidays], adjustedWorkdays: [...d.adjustedWorkdays] };
+  }
+  return out;
+}
+
 // ---------- 查看服务守护（扩展里同一套逻辑的共享版） ----------
 
 export async function pingServer(port) {
