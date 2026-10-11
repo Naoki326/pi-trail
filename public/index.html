@@ -291,6 +291,12 @@
         <input id="cfgReportTime" type="time" value="08:30" style="margin-top:4px;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px">
       </label>
     </div>
+    <label>放假安排（日报工作日历，未覆盖年份按周一至五）
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;font-size:13px">
+        <span id="cfgHolStatus"></span>
+        <button id="cfgHolImport" style="display:none"></button>
+      </div>
+    </label>
     <button id="syncNowBtn" style="align-self:flex-start">立即同步</button>
     <div id="syncStatus" style="font-size:12px;color:var(--dim)"></div>
   </div>
@@ -1337,6 +1343,35 @@ async function populateModelSelects(curAnalysis, curReport) {
   $("#cfgReportModel").innerHTML = build(curReport, "cfgReportModel");
 }
 
+function renderCfgHolidays() {
+  const h = state.holidays || { covered: [], suggestImport: [] };
+  $("#cfgHolStatus").textContent = (h.covered || []).length ? h.covered.map((y) => `${y} ✓`).join(" · ") : "无数据（按周一至五）";
+  const miss = h.suggestImport || [];
+  const btn = $("#cfgHolImport");
+  btn.style.display = miss.length ? "" : "none";
+  btn.textContent = miss.length ? `📥 导入 ${miss.join("、")}` : "";
+  btn.disabled = false;
+}
+
+$("#cfgHolImport").addEventListener("click", async () => {
+  const btn = $("#cfgHolImport");
+  const years = (state.holidays?.suggestImport || []).slice();
+  if (!years.length) return;
+  btn.disabled = true;
+  btn.textContent = "⏳ 导入中…";
+  try {
+    for (const year of years) {
+      const h = await api("/api/holidays/import", { year });
+      if (h && h.error) throw new Error(`${year}：${h.error}`);
+      state.holidays = h;
+    }
+    refresh(); // 后台刷新（月历标记、日报提示条等随之更新）
+  } catch (e) {
+    alert("导入失败：" + (e && e.message ? e.message : e));
+  }
+  renderCfgHolidays();
+});
+
 $("#settingsBtn").addEventListener("click", async () => {
   const cfg = await api("/api/config");
   await populateModelSelects(cfg.analysisModel || "", cfg.reportModel || "");
@@ -1345,6 +1380,7 @@ $("#settingsBtn").addEventListener("click", async () => {
   $("#cfgAuto").checked = cfg.autoSync !== false;
   $("#cfgReportTime").value = cfg.reportTime || "08:30";
   $("#syncStatus").textContent = fmtSync(cfg.lastSync);
+  renderCfgHolidays();
   $("#settingsDlg").showModal();
 });
 
