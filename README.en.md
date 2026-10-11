@@ -164,7 +164,7 @@ Analysis and reports **reuse pi's own model stack**: model names use the `provid
 | `PI_TRAIL_PORT` | `7799` | Web UI port |
 | `PI_TRAIL_STORE` | `~/.pi/trail` | Data directory (also used for demo/testing) |
 | `~/.pi/trail/config.json` | — | remote / branch / syncIntervalSec / autoSync / analysisModel / reportModel / reportTime |
-| `~/.pi/trail/holidays.json` | — | Custom holiday schedule (same format as the bundled `holidays.json`, merged per year: `holidays` = days off, `adjustedWorkdays` = make-up workdays); years not covered fall back to Mon–Fri; the web AI tab offers a 📥 one-click import when data is missing (a single fetch on click only, sourced from [holiday-cn](https://github.com/NateScarlet/holiday-cn), the structured version of the official gov.cn notices). **Gitignored — machine-local**; import once per machine |
+| `~/.pi/trail/holidays.json` | — | Custom holiday schedule (same format as the bundled `holidays.json`, merged per year: `holidays` = days off, `adjustedWorkdays` = make-up workdays); years not covered fall back to Mon–Fri; the ⚙ settings dialog offers a 📥 one-click import (a single fetch on click only, sourced from [holiday-cn](https://github.com/NateScarlet/holiday-cn), the structured version of the official gov.cn notices). **Gitignored — machine-local**; import once per machine |
 
 Upgrading from the pre-release `~/.pi/input-log`? The data directory is migrated automatically on first start.
 

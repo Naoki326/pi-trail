@@ -67,16 +67,6 @@
     border-radius: 5px; padding: 2px 10px; cursor: pointer; font-size: 12px;
   }
   .reportMissing button:hover { color: var(--text); border-color: var(--text); }
-  .holidayBar {
-    background: rgba(255,184,77,.08); border: 1px solid var(--accent2); color: var(--accent2);
-    border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px;
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  }
-  .holidayBar button {
-    background: var(--panel2); border: 1px solid var(--accent2); color: var(--accent2);
-    border-radius: 5px; padding: 2px 10px; cursor: pointer; font-size: 12px;
-  }
-  .holidayBar button:hover { color: var(--text); border-color: var(--text); }
   .reportCard { margin-bottom: 10px; }
   .reportCard summary { color: var(--accent); }
   /* AI 工作台卡片：按钮不用绝对定位（避免与 meta 长文本重叠），改为流式布局 */
@@ -876,12 +866,6 @@ function renderAI() {
     html += `<div class="reportMissing">⚠ 最近 15 天有 <b>${r.missing.length}</b> 个上班日缺少日报：${r.missing.map(esc).join("、")} <button class="reportGenMissing">一键补齐</button></div>`;
   }
 
-  // 放假安排导入提示（仅缺数据时显示；导入只在点击时联网一次）
-  const hol = state.holidays || {};
-  if (hol.suggestImport && hol.suggestImport.length) {
-    html += `<div class="holidayBar">📅 放假安排缺少 ${hol.suggestImport.map(esc).join("、")} 年数据（该年按周一至五处理）${hol.suggestImport.map((y) => `<button class="holidayImport" data-year="${esc(y)}">📥 导入 ${esc(y)}</button>`).join("")}</div>`;
-  }
-
   // 日报卡片（倒序）
   const days = Object.keys(r.reports || {}).sort().reverse();
   if (!days.length) {
@@ -1151,20 +1135,6 @@ $("#main").addEventListener("click", async (ev) => {
       }
     }
     if (!failed) state.reports.missing = state.reports.missing.filter((d) => !missing.includes(d));
-    renderAI();
-    return;
-  }
-  if (btn && btn.classList.contains("holidayImport")) {
-    const year = btn.dataset.year;
-    btn.disabled = true;
-    btn.textContent = `⏳ 导入 ${year} 中…`;
-    try {
-      const h = await api("/api/holidays/import", { year });
-      if (h && h.error) throw new Error(h.error);
-      state.holidays = h;
-    } catch (e) {
-      alert("导入失败：" + (e && e.message ? e.message : e));
-    }
     renderAI();
     return;
   }
